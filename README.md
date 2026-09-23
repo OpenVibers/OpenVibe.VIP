@@ -2,8 +2,10 @@
 
 > Memberships: plans, perks and benefits recognised across every OpenVibe site.
 
-**Status:** alpha — runtime built and tested (roadmap Wave 10), **not deployed**. `openvibe.vip` keeps
-its [OpenVibe.Sites](https://github.com/OpenVibers/OpenVibe.Sites) placeholder until the launch rule
+**Status:** alpha — runtime built and tested (roadmap Wave 10). Deployed internally, **not launched**:
+it runs on the host since 2026-09-23 on `127.0.0.1:4620` only, with one creator (`network`) and no plans
+or memberships, and checkout closed. `openvibe.vip` keeps its
+[OpenVibe.Sites](https://github.com/OpenVibers/OpenVibe.Sites) placeholder until the launch rule
 below holds.  
 **Domain:** `openvibe.vip` (port 4620, service id `vip`)  
 **Decision:** [ADR-012](https://github.com/OpenVibers/OpenVibe.Contracts/blob/main/docs/adr/ADR-012-economic-classification.md) —
@@ -58,7 +60,7 @@ home that is not a cache.
 - **OpenVibe.Network** — RS256 service and user tokens (JWKS), OAuth sign-in for the pages, identity
   resolve (importer only).
 - **OpenVibe.Events** — delivery of Billing's events to `/internal/events`; relay of VIP's outbox.
-- **openvibe-contracts** v0.14.0, **openvibe-sdk** v0.2.2 (outbox, inbox, delivery signatures),
+- **openvibe-contracts** v0.19.0, **openvibe-sdk** v0.4.0 (outbox, inbox, delivery signatures),
   **openvibe-shared** v1.3.0 (chrome, legal pages, release, metrics, readiness).
 - Consumers (not wired yet): Live, Chat, Community, Blog, Wiki — through the client below.
 - **Not** OpenVibe.Live: VIP works with Live unavailable (nothing here calls Live).
@@ -74,9 +76,10 @@ node scripts/subscribe.js            # create the three Events subscriptions for
 node scripts/import-live.js --live-db <live snapshot> [--billing-db <billing snapshot>] [--dry-run] [--json]
 ```
 
-Production (at launch): `/opt/openvibe.vip`, env `/etc/openvibe/vip.env`, unit
-[deploy/systemd/openvibe-vip.service](deploy/systemd/openvibe-vip.service) (state in `/var/lib/openvibe-vip`),
-vhost [deploy/nginx/openvibe.vip.conf](deploy/nginx/openvibe.vip.conf).
+Production (deployed, loopback only): `/opt/openvibe.vip`, env `/etc/openvibe/vip.env`, unit
+[deploy/systemd/openvibe-vip.service](deploy/systemd/openvibe-vip.service) (state in `/var/lib/openvibe-vip`).
+The vhost [deploy/nginx/openvibe.vip.conf](deploy/nginx/openvibe.vip.conf) is not installed yet:
+`openvibe.vip` still serves the Sites placeholder. The three Events subscriptions exist.
 
 ## Design
 
@@ -142,9 +145,9 @@ vhost [deploy/nginx/openvibe.vip.conf](deploy/nginx/openvibe.vip.conf).
 ## API (`/api/v1`)
 
 Service tokens: Network client-credentials, audience `openvibe.vip`, one capability per route (the
-`vip.*` ids are proposals in [docs/capabilities-proposal/](docs/capabilities-proposal/); until they ship
-in an openvibe-contracts release, grants are matched with contracts' `capabilities.grants()` — exact id
-or a `.*` family). User tokens: a Network user JWT; people act on their own things (their plans,
+`vip.*` ids are released in openvibe-contracts v0.19.0; the drafts stay in
+[docs/capabilities-proposal/](docs/capabilities-proposal/); grants are matched with contracts'
+`capabilities.grants()` — exact id or a `.*` family). User tokens: a Network user JWT; people act on their own things (their plans,
 perks, rules, members; their own memberships and checks); staff roles (`VIP_STAFF_ROLES`) manage
 network plans. Errors are RFC 9457 problem+json. Creators are named by SubjectRef, `usr_` id, VIP
 handle or `network`.
@@ -167,7 +170,7 @@ handle or `network`.
 | `PUT /memberships/:creator/preferences` | — | self only | `{ show_badge, listed }` |
 | `GET\|POST /entitlements/check` `{subject, creator, mode}` | `vip.entitlement.check` | self | `{ status: active\|inactive\|unknown, active, expires_at, cancel_at_period_end, source, stale, valid_until, membership }` |
 | `GET /policies?service=&type=&id=&owner=` / `?creator=` (services must name `owner`; a person defaults to themselves) | `vip.resource.policy.get` | owner | the rule for a resource / a creator's rules |
-| `POST /policies`, `DELETE /policies/:id` | `vip.resource.policy.set` *(proposed addition)* | owner | gate / un-gate a resource `{resource, requirement: member\|plan\|perk, plan_id, perk_key, sensitive}` |
+| `POST /policies`, `DELETE /policies/:id` | `vip.resource.policy.set` | owner | gate / un-gate a resource `{resource, requirement: member\|plan\|perk, plan_id, perk_key, sensitive}` |
 | `POST /policies/evaluate` `{subject, resource, owner, rule_id?, mode?}` — `owner` = the creator the PRODUCT says owns the resource (usr_ id or `network`); only that creator's rule applies, none → `owner_required` | `vip.resource.policy.evaluate` | self | `{ allow, reason, rule, entitlement }` — **fails closed** |
 | `GET /creators/:ref/members` | `vip.creator.members.list` | owner / staff | active members with their plan version; from Billing, or the labelled projection when Billing is down |
 
@@ -272,7 +275,8 @@ final import), `scripts/subscribe.js`, then open checkout (`VIP_CHECKOUT_PROVIDE
 | VIP works with Live unavailable | no code path calls Live; every test runs without a Live stub |
 
 Not yet demonstrated (needs the other services): convergence **across consuming products** (Live,
-Chat, Community do not call VIP yet), and a real Billing/Events round trip on the host.
+Chat, Community do not call VIP yet), and a real Billing/Events round trip on the host (Billing is in
+shadow and has sent VIP no events). The Live import has not been run on production.
 
 ## Launch rule
 
@@ -281,10 +285,10 @@ This repository does not make the product real, and the domain keeps its placeho
 following exist (plan §12.12):
 
 1. an owning runtime with health/readiness endpoints and observability — ✔ (`/api/health`, truthful `/api/ready`, `/metrics`);
-2. canonical identity/auth integration (Network subjects, scoped service principals) — ✔ in code; the `vip` principal and grants are not provisioned yet;
+2. canonical identity/auth integration (Network subjects, scoped service principals) — ✔; the `vip` principal is provisioned on the host;
 3. server-rendered public routes useful without JavaScript — ✔;
-4. real persistence and end-to-end workflows — ✔ against stubs; not yet against the running Billing and Events;
-5. capability and event registration against `OpenVibe.Contracts` — proposed ([docs/](docs/)), not released;
+4. real persistence and end-to-end workflows — ✔ against stubs; not yet against the running Billing and Events (deployed, but Billing is in shadow and checkout is closed);
+5. capability and event registration against `OpenVibe.Contracts` — ✔ v0.19.0;
 6. a migration/seed strategy ✔, a security/threat review (notes above; a review by someone else is still due), sitemap/robots ✔ (no feed by design);
 7. acceptance tests proving the advertised functionality — ✔ for VIP itself; cross-product convergence waits for the consumers.
 
