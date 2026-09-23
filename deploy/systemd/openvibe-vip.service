@@ -1,0 +1,48 @@
+[Unit]
+Description=OpenVibe.VIP — memberships: plans, versioned terms, perks and gated-resource policy
+# Network signs the tokens VIP verifies (its key is fetched at boot and retried); Billing holds
+# the entitlement truth; Events relays the outbox when EVENTS_URL is set. VIP starts without any.
+After=network.target
+Wants=openvibe-network.service openvibe-billing.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/openvibe.vip
+EnvironmentFile=/etc/openvibe/vip.env
+Environment=NODE_ENV=production
+Environment=PORT=4620
+Environment=HOST=127.0.0.1
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env node /opt/openvibe.vip/server/index.js
+Restart=always
+RestartSec=5
+# The VIP database lives in /var/lib/openvibe-vip (ADR-007: one database per service);
+# the code tree stays read-only.
+StateDirectory=openvibe-vip
+StateDirectoryMode=0700
+Environment=VIP_DB_PATH=/var/lib/openvibe-vip/vip.db
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

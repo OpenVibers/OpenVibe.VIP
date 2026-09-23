@@ -1,0 +1,20 @@
+{
+  "id": "vip.entitlement.check",
+  "version": "1.0",
+  "owner": "vip",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Is a subject a member of a creator right now? Answered from VIP's short-lived projection of Billing entitlements, with a direct Billing check when the projection is stale (mode auto) or always (mode authoritative). Past valid_until plus grace the answer is \"unknown\", which never authorizes.",
+  "permissions": [
+    "vip:read"
+  ],
+  "resourceConstraints": [
+    "none"
+  ],
+  "quotaClass": "vip-read",
+  "events": [],
+  "implementedBy": [
+    "GET /api/v1/entitlements/check",
+    "POST /api/v1/entitlements/check"
+  ]
+}

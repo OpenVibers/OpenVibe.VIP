@@ -1,0 +1,19 @@
+{
+  "id": "vip.perk.update",
+  "version": "1.0",
+  "owner": "vip",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Rename, describe, retire a perk or replace its product bindings. Published plan versions keep the perk snapshot they were published with.",
+  "permissions": [
+    "vip:perks"
+  ],
+  "resourceConstraints": [
+    "owner"
+  ],
+  "quotaClass": "vip-write",
+  "events": [],
+  "implementedBy": [
+    "PATCH /api/v1/perks/:id"
+  ]
+}

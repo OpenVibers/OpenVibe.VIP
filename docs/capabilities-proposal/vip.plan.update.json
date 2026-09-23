@@ -1,0 +1,22 @@
+{
+  "id": "vip.plan.update",
+  "version": "1.0",
+  "owner": "vip",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Edit a plan by creating a new immutable version (published at once when the plan is published), or publish a draft. Earlier versions and the terms members joined under are never rewritten.",
+  "permissions": [
+    "vip:plans"
+  ],
+  "resourceConstraints": [
+    "owner"
+  ],
+  "quotaClass": "vip-write",
+  "events": [
+    "vip.plan.published"
+  ],
+  "implementedBy": [
+    "PATCH /api/v1/plans/:id",
+    "POST /api/v1/plans/:id/publish"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "id": "vip.plan.list",
+  "version": "1.0",
+  "owner": "vip",
+  "status": "active",
+  "visibility": "public",
+  "description": "List a creator's plans with their current and draft versions and the full version history. Published plans are public without a grant; the grant adds drafts and archived plans.",
+  "permissions": [
+    "vip:read"
+  ],
+  "resourceConstraints": [
+    "none"
+  ],
+  "quotaClass": "vip-read",
+  "events": [],
+  "implementedBy": [
+    "GET /api/v1/plans",
+    "GET /api/v1/plans/:id",
+    "GET /api/v1/plans/:id/versions",
+    "GET /api/v1/creators/:ref"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "vip.resource.policy.get",
+  "version": "1.0",
+  "owner": "vip",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Read the gated-resource rule VIP holds for a resource (EntityRef), or a creator's rules.",
+  "permissions": [
+    "vip:read"
+  ],
+  "resourceConstraints": [
+    "none"
+  ],
+  "quotaClass": "vip-read",
+  "events": [],
+  "implementedBy": [
+    "GET /api/v1/policies",
+    "GET /api/v1/policies/:id"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "vip.resource.policy.set",
+  "version": "1.0",
+  "owner": "vip",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Create, replace or remove the rule gating a resource (EntityRef) for a creator: any member, members of one plan, or members whose plan version includes a perk; optionally always checked with Billing (sensitive).",
+  "permissions": [
+    "vip:policies"
+  ],
+  "resourceConstraints": [
+    "owner"
+  ],
+  "quotaClass": "vip-write",
+  "events": [],
+  "implementedBy": [
+    "POST /api/v1/policies",
+    "DELETE /api/v1/policies/:id"
+  ]
+}

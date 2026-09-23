@@ -1,0 +1,19 @@
+{
+  "id": "vip.membership.status",
+  "version": "1.0",
+  "owner": "vip",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "A member's memberships: the plan version each was bought under, preferences, and the entitlement status (projection, confirmed with Billing when stale).",
+  "permissions": [
+    "vip:read"
+  ],
+  "resourceConstraints": [
+    "owner"
+  ],
+  "quotaClass": "vip-read",
+  "events": [],
+  "implementedBy": [
+    "GET /api/v1/memberships/:subject"
+  ]
+}

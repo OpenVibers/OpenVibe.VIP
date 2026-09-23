@@ -1,0 +1,21 @@
+{
+  "id": "vip.plan.create",
+  "version": "1.0",
+  "owner": "vip",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Create a membership plan (version 1) for a creator, or for the network (staff). A published plan is sold through OpenVibe.Billing as the creator's channel subscription; Billing sets the price.",
+  "permissions": [
+    "vip:plans"
+  ],
+  "resourceConstraints": [
+    "owner"
+  ],
+  "quotaClass": "vip-write",
+  "events": [
+    "vip.plan.published"
+  ],
+  "implementedBy": [
+    "POST /api/v1/plans"
+  ]
+}

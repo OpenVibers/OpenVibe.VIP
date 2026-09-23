@@ -1,0 +1,21 @@
+{
+  "id": "vip.membership.checkout",
+  "version": "1.0",
+  "owner": "vip",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Start joining a plan on behalf of a member: VIP records the plan version chosen and hands off to OpenVibe.Billing (payment intent, or a period paid from the member's credit). Billing charges; VIP never does.",
+  "permissions": [
+    "vip:checkout"
+  ],
+  "resourceConstraints": [
+    "owner"
+  ],
+  "quotaClass": "vip-write",
+  "events": [
+    "vip.membership.changed"
+  ],
+  "implementedBy": [
+    "POST /api/v1/checkout"
+  ]
+}

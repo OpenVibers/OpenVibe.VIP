@@ -1,0 +1,19 @@
+{
+  "id": "vip.resource.policy.evaluate",
+  "version": "1.0",
+  "owner": "vip",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "May subject S see resource R (under rule X)? Fails closed: no rule, a disabled rule, an entitlement VIP cannot confirm, a missing perk or any error is allow: false with the reason.",
+  "permissions": [
+    "vip:read"
+  ],
+  "resourceConstraints": [
+    "none"
+  ],
+  "quotaClass": "vip-read",
+  "events": [],
+  "implementedBy": [
+    "POST /api/v1/policies/evaluate"
+  ]
+}

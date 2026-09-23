@@ -1,7 +1,24 @@
 {
   "repository": "OpenVibers/OpenVibe.VIP",
-  "stage": "placeholder",
-  "code": false,
+  "stage": "alpha",
+  "code": true,
+  "deployed": false,
   "plan": "OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026)",
-  "updated": "2026-09-21"
+  "roadmap": "Wave 10",
+  "works": [
+    "plans, immutable plan versions, perks, product bindings, member preferences and gated-resource rules in VIP's own SQLite",
+    "entitlement projection fed by Billing events (signed webhook + openvibe-sdk inbox) with valid_until, grace and a direct Billing fallback; 'unknown' never authorizes",
+    "checkout hand-off and cancellation through OpenVibe.Billing; the membership is filed under the plan version chosen",
+    "API /api/v1 for service and user tokens; consumer client openvibe-vip/client that fails closed",
+    "server-rendered creator plan pages, terms history, member status and creator dashboard with the shared chrome",
+    "outbox events vip.plan.published and vip.membership.changed (openvibe-sdk)",
+    "import of Live's subscription offering, memberships from Billing entitlements"
+  ],
+  "not_yet": [
+    "not deployed; openvibe.vip is still an OpenVibe.Sites placeholder",
+    "vip.* capabilities and the service manifest are proposals, not in an openvibe-contracts release",
+    "Live, Chat and Community do not call VIP yet (consumer integration is the next step)",
+    "Billing sells one channel subscription per member and creator: one purchasable plan per creator, no tiers, no network membership product"
+  ],
+  "updated": "2026-09-22"
 }

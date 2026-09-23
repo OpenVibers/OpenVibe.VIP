@@ -1,0 +1,19 @@
+{
+  "id": "vip.plan.archive",
+  "version": "1.0",
+  "owner": "vip",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Archive a plan: no new members; existing members keep their terms until Billing ends their membership.",
+  "permissions": [
+    "vip:plans"
+  ],
+  "resourceConstraints": [
+    "owner"
+  ],
+  "quotaClass": "vip-write",
+  "events": [],
+  "implementedBy": [
+    "POST /api/v1/plans/:id/archive"
+  ]
+}

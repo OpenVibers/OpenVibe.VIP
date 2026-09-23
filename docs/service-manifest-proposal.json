@@ -1,0 +1,45 @@
+{
+  "version": "0.2.0",
+  "contractRanges": {
+    "openvibe-contracts": ">=0.14.0 <1.0.0"
+  },
+  "id": "vip",
+  "name": "OpenVibe.VIP",
+  "status": "alpha",
+  "repository": "OpenVibers/OpenVibe.VIP",
+  "domains": [
+    "openvibe.vip"
+  ],
+  "publicOrigin": "https://openvibe.vip",
+  "health": "/api/health",
+  "ready": "/api/ready",
+  "capabilities": [
+    "vip.plan.create",
+    "vip.plan.update",
+    "vip.plan.archive",
+    "vip.plan.list",
+    "vip.perk.create",
+    "vip.perk.update",
+    "vip.perk.list",
+    "vip.membership.checkout",
+    "vip.membership.status",
+    "vip.entitlement.check",
+    "vip.resource.policy.get",
+    "vip.resource.policy.set",
+    "vip.resource.policy.evaluate",
+    "vip.creator.members.list"
+  ],
+  "eventsProduced": [
+    "vip.plan.published",
+    "vip.membership.changed"
+  ],
+  "eventsConsumed": [
+    "billing.entitlement.changed",
+    "billing.subscription.canceled",
+    "billing.transaction.reversed"
+  ],
+  "namespacesOwned": [
+    "vip.*"
+  ],
+  "notes": "Memberships (ADR-012): plans, immutable versioned plan terms, perks, product bindings, member preferences and gated-resource policy. OpenVibe.Billing holds subscriptions, charges, renewals, refunds and the canonical entitlements; VIP keeps a short-lived projection of them (valid_until, authoritative fallback, 'unknown' never authorizes). Alpha: not deployed; openvibe.vip stays on its OpenVibe.Sites placeholder until the launch rule holds."
+}
