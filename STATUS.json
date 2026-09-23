@@ -10,7 +10,8 @@
     "plans, immutable plan versions, perks, product bindings, member preferences and gated-resource rules in VIP's own SQLite",
     "entitlement projection fed by Billing events (signed webhook + openvibe-sdk inbox) with valid_until, grace and a direct Billing fallback; 'unknown' never authorizes",
     "checkout hand-off and cancellation through OpenVibe.Billing; the membership is filed under the plan version chosen",
-    "API /api/v1 for service and user tokens; consumer client openvibe-vip/client that fails closed",
+    "API /api/v1 for service and user tokens; consumer client openvibe-vip/client that fails closed, with createVipCache (the product cache and its convergence bound, test/convergence.test.js)",
+    "the product's default gate (evaluate fallback, honouring product bindings such as blog gated_post) and entitlements/check product perks (Chat's badge); Chat, Community and Blog consume them in code (not deployed, grants pending)",
     "server-rendered creator plan pages, terms history, member status and creator dashboard with the shared chrome",
     "outbox events vip.plan.published and vip.membership.changed (openvibe-sdk)",
     "import of Live's subscription offering, memberships from Billing entitlements",
@@ -21,7 +22,7 @@
     "not launched: openvibe.vip is still an OpenVibe.Sites placeholder and the service answers on loopback only",
     "checkout is closed until the Billing cutover (Billing runs in shadow; the owner must re-point the PowerChat webhook first); no billing.* event has reached VIP",
     "the Live subscription import (scripts/import-live.js) has not been run (vip_migration_maps 0)",
-    "Live, Chat, Community, Blog and Wiki do not call VIP yet (no client, no vip.* grants for them)",
+    "Chat, Community and Blog call VIP in code only: not deployed, and the Network has no vip.* grants for them yet; Live and Wiki do not call VIP",
     "membership badge, card and widget endpoints",
     "Billing sells one channel subscription per member and creator: one purchasable plan per creator, no tiers, no network membership product"
   ],

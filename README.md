@@ -62,7 +62,8 @@ home that is not a cache.
 - **OpenVibe.Events** — delivery of Billing's events to `/internal/events`; relay of VIP's outbox.
 - **openvibe-contracts** v0.19.0, **openvibe-sdk** v0.4.0 (outbox, inbox, delivery signatures),
   **openvibe-shared** v1.3.0 (chrome, legal pages, release, metrics, readiness).
-- Consumers (not wired yet): Live, Chat, Community, Blog, Wiki — through the client below.
+- Consumers, through the client below: Chat (the member badge), Community (members-only spaces and
+  threads) and Blog (members-only posts); Live and Wiki are not wired yet.
 - **Not** OpenVibe.Live: VIP works with Live unavailable (nothing here calls Live).
 
 ## Run it
@@ -71,7 +72,7 @@ home that is not a cache.
 fnm exec --using=22.22.1 npm install
 cp .env.example .env                 # OV_OAUTH_CLIENT_SECRET, VIP_FORM_SECRET, VIP_EVENTS_SECRET, BILLING_URL …
 fnm exec --using=22.22.1 npm run dev # http://localhost:4620
-fnm exec --using=22.22.1 npm test    # 5 test files: stub Network + Billing, temp DBs, random ports, injected clock
+fnm exec --using=22.22.1 npm test    # 7 test files: stub Network + Billing, temp DBs, random ports, injected clock
 node scripts/subscribe.js            # create the three Events subscriptions for Billing's events
 node scripts/import-live.js --live-db <live snapshot> [--billing-db <billing snapshot>] [--dry-run] [--json]
 ```
@@ -168,15 +169,24 @@ handle or `network`.
 | `GET /memberships/:subject[?mode=]` | `vip.membership.status` | self | memberships, version bought under, entitlement, preferences |
 | `POST /memberships/:creator/cancel` | — | self only | cancel at period end through Billing |
 | `PUT /memberships/:creator/preferences` | — | self only | `{ show_badge, listed }` |
-| `GET\|POST /entitlements/check` `{subject, creator, mode}` | `vip.entitlement.check` | self | `{ status: active\|inactive\|unknown, active, expires_at, cancel_at_period_end, source, stale, valid_until, membership }` |
+| `GET\|POST /entitlements/check` `{subject, creator, mode, product?}` | `vip.entitlement.check` | self | `{ status: active\|inactive\|unknown, active, expires_at, cancel_at_period_end, source, stale, valid_until, membership }`; with `product` also `product_perks` (the member's version perks bound to that product, with each binding's config, e.g. Chat's `badge`) and `preferences` (`show_badge`) |
 | `GET /policies?service=&type=&id=&owner=` / `?creator=` (services must name `owner`; a person defaults to themselves) | `vip.resource.policy.get` | owner | the rule for a resource / a creator's rules |
 | `POST /policies`, `DELETE /policies/:id` | `vip.resource.policy.set` | owner | gate / un-gate a resource `{resource, requirement: member\|plan\|perk, plan_id, perk_key, sensitive}` |
-| `POST /policies/evaluate` `{subject, resource, owner, rule_id?, mode?}` — `owner` = the creator the PRODUCT says owns the resource (usr_ id or `network`); only that creator's rule applies, none → `owner_required` | `vip.resource.policy.evaluate` | self | `{ allow, reason, rule, entitlement }` — **fails closed** |
+| `POST /policies/evaluate` `{subject, resource, owner, rule_id?, mode?, fallback?}` — `owner` = the creator the PRODUCT says owns the resource (usr_ id or `network`); only that creator's rule applies, none → `owner_required`. `fallback` `{ requirement: 'member', binding?: 'product:binding' }` = the product's default gate, used only when the owner has no rule (below) | `vip.resource.policy.evaluate` | self | `{ allow, reason, rule, entitlement, fallback? }` — **fails closed** |
 | `GET /creators/:ref/members` | `vip.creator.members.list` | owner / staff | active members with their plan version; from Billing, or the labelled projection when Billing is down |
 
 Evaluate reasons: `member`, `owner`, `no_rule`, `rule_mismatch`, `rule_disabled`, `invalid_resource`,
-`creator_unavailable`, `not_signed_in`, `not_a_member`, `entitlement_unknown`, `plan_required`,
-`perk_missing`. Only `allow: true` allows.
+`invalid_fallback`, `creator_unavailable`, `not_signed_in`, `not_a_member`, `entitlement_unknown`,
+`plan_required`, `perk_missing`. Only `allow: true` allows.
+
+**The product's default gate (`fallback`).** A product that marks its own resource members-only (a Blog
+post, a Community space or thread) does not register a VIP rule per resource. It asks with
+`fallback: { requirement: 'member', binding: 'blog:gated_post' }`, which applies only when the owner
+has no active rule for that resource — a rule the creator sets in VIP (plan or perk requirement,
+sensitive) always wins. Under the fallback the viewer needs an active entitlement to the owner and,
+when the owner defines an active perk carrying that product binding, a plan version that includes one
+of those perks (`perk_missing` otherwise). A creator VIP has never seen is asked of Billing as is.
+The answer has `fallback: true` and `rule: null`.
 
 ## Consumer seam: `openvibe-vip/client`
 
@@ -198,7 +208,39 @@ await vip.checkEntitlement({ subject, creator, mode: 'authoritative' }); // sens
 ```
 
 Until the SDK grows a `vip` module, consumers pin this repository's tag tarball and require only
-`openvibe-vip/client` (it loads nothing else); moving it into openvibe-sdk is the intended home.
+`openvibe-vip/client` (it loads nothing else), or vendor the file verbatim with the commit it was
+copied from (Chat, Community and Blog do, in `server/vip/vip-client.js`, until a VIP tag is published);
+moving it into openvibe-sdk is the intended home.
+
+### The product cache and the convergence bound
+
+Every consumer puts `createVipCache` (same module) in front of the client, so the rule for how long
+a product may keep granting after a membership ends is written once:
+
+```js
+const { createVipClient, createVipCache } = require('openvibe-vip/client');
+const cache = createVipCache({ vip, ttlMs: 30_000, denyTtlMs: 10_000, unavailableTtlMs: 2_000 });
+await cache.evaluate({ subject, resource, owner, fallback });        // Community, Blog
+await cache.entitlement({ subject, creator, product: 'chat' });      // Chat's badge
+cache.peekEntitlement({ subject, creator, product: 'chat' });        // never waits (a miss warms it)
+cache.handleEvent(envelope);                                          // vip.membership.changed, billing.entitlement.changed, …
+```
+
+When a membership changes (Billing emits `billing.entitlement.changed`, VIP applies it and emits
+`vip.membership.changed`), a product stops granting within:
+
+| Situation | Bound |
+|---|---|
+| the product hands the event to `cache.handleEvent` | at once (the member–creator pair is dropped; an answer in flight is not stored) |
+| VIP has the event, the product does not | `ttlMs` (a cached "yes" lives at most that long) |
+| every event lost, VIP's included | `VIP_PROJECTION_MAX_AGE_MS` + `ttlMs` (15 min + the product's TTL by default); with Billing down as well, add `VIP_PROJECTION_GRACE_MS`, after which VIP answers `unknown` |
+| cancel at period end / the period ends | never past `expires_at`: a "yes" is not cached beyond the entitlement's `expires_at` or VIP's `valid_until` |
+| VIP unreachable | `ttlMs`, then every answer is a denial (a failure never extends a "yes") |
+
+A "no" is cached `denyTtlMs` (a new member waits at most that long); failures `unavailableTtlMs`.
+[test/convergence.test.js](test/convergence.test.js) proves every row against the real VIP with an
+injected clock. The products' TTLs: Chat 60 s (a badge), Community 30 s, Blog 30 s — each product's
+README repeats its bound and its own test drives the product through a change.
 Live's badge mapping (`live chat_badge`, `live powerchat_overlay`, `live ai_context`) and Chat's
 (`chat badge`) are declared as product bindings of the network perk `subscriber-badge`.
 

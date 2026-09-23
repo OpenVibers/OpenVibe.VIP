@@ -253,7 +253,18 @@ function v1Router({ domain, apiAuth }) {
             creatorSubject = c.subject;
         }
         const mode = ['projection', 'authoritative'].includes(src.mode) ? src.mode : 'auto';
-        res.json(await entitlements.check(member, creatorSubject, { mode, traceparent: trace(req) }));
+        const out = await entitlements.check(member, creatorSubject, { mode, traceparent: trace(req) });
+        // `product`: what this membership means in one product — the perks of the member's plan version
+        // with that product's bindings (a chat badge, a gated post, …) and the member's badge preference.
+        if (src.product != null && src.product !== '') {
+            const product = String(src.product);
+            if (!/^[a-z][a-z0-9-]{1,39}$/.test(product)) fail(422, 'vip.invalid_input', 'product must be a service id such as chat or blog');
+            out.product = product;
+            out.product_perks = out.active ? perks.forMembership(out.membership, product) : [];
+            const c = creators.bySubject(creatorSubject);
+            out.preferences = c ? memberships.preferences(member, c.id) : { show_badge: true, listed: false };
+        }
+        res.json(out);
     });
     r.get('/entitlements/check', entitlementCheck);
     r.post('/entitlements/check', entitlementCheck);
@@ -312,7 +323,7 @@ function v1Router({ domain, apiAuth }) {
             const s = b.subject && typeof b.subject === 'object' ? b.subject.id : b.subject;
             subject = s ? String(s) : null;
         }
-        const out = await policies.evaluate({ subject, resource: b.resource, owner: b.owner || null, ruleId: b.rule_id, mode: b.mode === 'authoritative' ? 'authoritative' : 'auto', traceparent: trace(req) });
+        const out = await policies.evaluate({ subject, resource: b.resource, owner: b.owner || null, ruleId: b.rule_id, mode: b.mode === 'authoritative' ? 'authoritative' : 'auto', fallback: b.fallback || null, traceparent: trace(req) });
         res.json(out);
     }));
 

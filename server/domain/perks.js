@@ -102,6 +102,24 @@ function createPerks({ db, now }) {
 
     const bindingsOf = (perkId) => db.prepare("SELECT * FROM vip_product_bindings WHERE perk_id = ? AND status = 'active' ORDER BY product, binding").all(perkId);
 
+    /**
+     * The perks a presented membership's plan version grants, with their active bindings for one
+     * product: [{ key, name, kind, scope, bindings: [{ binding, config }] }] (perks without such a
+     * binding are left out). The version's snapshot names the keys; a key resolves to the creator's
+     * own perk first, then the network's.
+     */
+    function forMembership(membership, product) {
+        if (!membership || !Array.isArray(membership.perks) || !membership.perks.length) return [];
+        const out = [];
+        for (const key of membership.perks) {
+            const p = byKey(membership.creator_id, key) || byKey('network', key);
+            if (!p || p.status !== 'active') continue;
+            const bindings = bindingsOf(p.id).filter((b) => b.product === product).map((b) => ({ binding: b.binding, config: json(b.config, {}) }));
+            if (bindings.length) out.push({ key: p.key, name: p.name, kind: p.kind, scope: p.creator_id === 'network' ? 'network' : 'creator', bindings });
+        }
+        return out;
+    }
+
     function present(p, { withBindings = true } = {}) {
         if (!p) return null;
         return {
@@ -112,7 +130,7 @@ function createPerks({ db, now }) {
         };
     }
 
-    return { byId, byKey, create, update, list, resolveForPlan, bindingsOf, present, KINDS };
+    return { byId, byKey, create, update, list, resolveForPlan, bindingsOf, forMembership, present, KINDS };
 }
 
 module.exports = { createPerks };

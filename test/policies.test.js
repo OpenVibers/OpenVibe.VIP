@@ -151,6 +151,61 @@ const { test, run } = harness('policies');
         assert.strictEqual(spy.status, 403);
     });
 
+    test('the product\'s default gate (fallback): members of the owner pass when the owner has no rule; the owner\'s rule wins', async () => {
+        const res = { service: 'community', type: 'space', id: 'crew-lounge' };
+        const fb = { requirement: 'member' };
+        let d = await evaluate(member.subject, res, { fallback: fb });
+        assert.deepStrictEqual([d.allow, d.reason, d.fallback, d.rule], [true, 'member', true, null]);
+        d = await evaluate(stranger.subject, res, { fallback: fb });
+        assert.deepStrictEqual([d.allow, d.reason], [false, 'not_a_member']);
+        d = await evaluate(null, res, { fallback: fb });
+        assert.deepStrictEqual([d.allow, d.reason], [false, 'not_signed_in']);
+        d = await evaluate(creator.subject, res, { fallback: fb });
+        assert.deepStrictEqual([d.allow, d.reason], [true, 'owner']);
+        assert.strictEqual((await evaluate(member.subject, res)).reason, 'no_rule', 'without the fallback nothing changed');
+        // The owner's own rule decides once it exists: a plan rule for another plan refuses.
+        const other = (await t.call('POST', '/api/v1/plans', { user: creator, body: { name: 'Other tier', publish: false } })).json.plan;
+        const r = await t.call('POST', '/api/v1/policies', { user: creator, body: { resource: res, requirement: 'plan', plan_id: other.id } });
+        assert.strictEqual(r.status, 201, r.text);
+        d = await evaluate(member.subject, res, { fallback: fb });
+        assert.deepStrictEqual([d.allow, d.reason], [false, 'plan_required']);
+        await t.call('DELETE', `/api/v1/policies/${r.json.rule.id}`, { user: creator });
+        assert.strictEqual((await evaluate(member.subject, res, { fallback: fb })).allow, true);
+        // Owner required; a malformed fallback denies; the fallback never applies to someone else's owner.
+        assert.strictEqual((await t.call('POST', '/api/v1/policies/evaluate', { ...blog, body: { subject: member.subject, resource: res, fallback: fb } })).json.reason, 'owner_required');
+        assert.strictEqual((await evaluate(member.subject, res, { fallback: { requirement: 'anyone' } })).reason, 'invalid_fallback');
+        const nobody = t.network.newUser('nob', { role: 'streamer' });
+        d = (await t.call('POST', '/api/v1/policies/evaluate', { ...blog, body: { subject: member.subject, resource: res, owner: nobody.subject, fallback: fb } })).json;
+        assert.deepStrictEqual([d.allow, d.reason], [false, 'not_a_member'], 'a creator VIP has never seen: Billing is asked, and says no');
+    });
+
+    test('fallback with a product binding: when the owner defines a perk bound to it, the member\'s version must include it', async () => {
+        const res = { service: 'blog', type: 'post', id: 'fallback-bound' };
+        const fb = { requirement: 'member', binding: 'blog:gated_post' };
+        // erin's `backstage` perk carries blog gated_post: v1 (oldMember) has it, v2 (member) does not.
+        assert.strictEqual((await evaluate(oldMember.subject, res, { fallback: fb })).allow, true);
+        const d = await evaluate(member.subject, res, { fallback: fb });
+        assert.deepStrictEqual([d.allow, d.reason], [false, 'perk_missing']);
+        // A binding no perk of the owner carries: any active member.
+        assert.strictEqual((await evaluate(member.subject, res, { fallback: { requirement: 'member', binding: 'community:members_only' } })).allow, true);
+        assert.strictEqual((await evaluate(member.subject, res, { fallback: { requirement: 'member', binding: 'nope' } })).reason, 'invalid_fallback');
+    });
+
+    test('entitlements/check with product: the version\'s perks bound to that product, and the badge preference', async () => {
+        const svc = { cap: ['vip.entitlement.check'] };
+        const ask = async (who, product) => (await t.call('POST', '/api/v1/entitlements/check', { ...svc, body: { subject: who.subject, creator: creator.subject, product } })).json;
+        let e = await ask(oldMember, 'blog');
+        assert.strictEqual(e.active, true);
+        assert.deepStrictEqual(e.product_perks.map((p) => [p.key, p.bindings.map((b) => b.binding)]), [['backstage', ['gated_post']]]);
+        assert.deepStrictEqual(e.preferences, { show_badge: true, listed: false });
+        e = await ask(member, 'blog');
+        assert.deepStrictEqual(e.product_perks, [], 'v2 dropped the perk');
+        e = await ask(stranger, 'blog');
+        assert.deepStrictEqual([e.active, e.product_perks], [false, []]);
+        assert.strictEqual((await ask(oldMember)).product_perks, undefined, 'no product, no perks');
+        assert.strictEqual((await t.call('POST', '/api/v1/entitlements/check', { ...svc, body: { subject: member.subject, creator: creator.subject, product: 'Bad Product' } })).status, 422);
+    });
+
     test('the consumer client: allows members, and fails closed on every failure', async () => {
         const res = { service: 'blog', type: 'post', id: 'mine' };
         const tokenClient = { authHeaders: async () => ({ Authorization: `Bearer ${t.network.signService({ sub: 'svc:blog', cap: ['vip.resource.policy.evaluate', 'vip.entitlement.check'] })}` }) };

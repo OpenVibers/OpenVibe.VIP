@@ -13,6 +13,14 @@
  * evaluate() FAILS CLOSED: no owner, no rule, a disabled rule, a suspended creator, an entitlement Billing
  * cannot confirm ("unknown"), a missing perk or any error → allow: false with the reason. Rules
  * marked sensitive always ask Billing directly (never the projection).
+ *
+ * The product's default gate (`fallback`): a product that marks its own resource members-only (a Blog
+ * post, a Community space or thread) need not register a rule for each one. It passes
+ * fallback { requirement: 'member', binding: 'product:binding' }, which applies ONLY when the owner has
+ * no active rule for the resource (the creator's own rule always wins): the viewer must hold an active
+ * entitlement to the owner, and — when the owner defines an active perk with that product binding
+ * (e.g. `blog gated_post`) — the membership's plan version must include one of those perks. Every
+ * doubt still denies; the answer carries `fallback: true` and `rule: null`.
  */
 const { fail, prefixedId, iso, entityRef, isUserSubject, text } = require('../util');
 
@@ -74,18 +82,67 @@ function createPolicies({ db, now, creators, plans, perks, memberships, entitlem
 
     const deny = (reason, extra = {}) => ({ allow: false, reason, ...extra });
 
+    /** A product's default gate → { requirement: 'member', binding: { product, binding } | null }, or null when absent. */
+    function cleanFallback(f) {
+        if (f == null || f === false) return null;
+        const v = typeof f === 'string' ? { requirement: f } : f;
+        if (!v || typeof v !== 'object' || v.requirement !== 'member') fail(422, 'vip.invalid_input', 'fallback must be { requirement: "member", binding?: "product:binding" }');
+        if (v.binding == null || v.binding === '') return { requirement: 'member', binding: null };
+        const m = /^([a-z][a-z0-9-]{1,39})[: ]([a-z][a-z0-9_.]{1,63})$/.exec(String(v.binding));
+        if (!m) fail(422, 'vip.invalid_input', 'fallback.binding must be "product:binding", such as blog:gated_post');
+        return { requirement: 'member', binding: { product: m[1], binding: m[2] } };
+    }
+
+    /** The owner's active perks (own and network) that carry a product binding: the keys a member must hold. */
+    function boundPerkKeys(creatorId, { product, binding }) {
+        return perks.list({ creatorId, includeNetwork: true })
+            .filter((p) => perks.bindingsOf(p.id).some((b) => b.product === product && b.binding === binding))
+            .map((p) => p.key);
+    }
+
+    /** evaluate() when the owner has no rule and the product passed its default gate. */
+    async function evaluateFallback({ subject, oc, fb, mode, traceparent }) {
+        const base = { rule: null, fallback: true };
+        if (oc.status !== 'active' || !oc.subject) return deny('creator_unavailable', base);
+        if (!subject) return deny('not_signed_in', base);
+        if (!isUserSubject(subject)) return deny('not_a_member', base);
+        if (subject === oc.subject) return { allow: true, reason: 'owner', ...base, entitlement: null };
+        let ent;
+        try {
+            ent = await entitlements.check(subject, oc.subject, { mode: mode === 'authoritative' ? 'authoritative' : 'auto', traceparent });
+        } catch { return deny('entitlement_unknown', base); }
+        if (ent.status === 'unknown') return deny('entitlement_unknown', { ...base, entitlement: ent });
+        if (!ent.active) return deny('not_a_member', { ...base, entitlement: ent });
+        if (fb.binding) {
+            const needed = boundPerkKeys(oc.id, fb.binding);
+            if (needed.length) {
+                const held = memberships.perkKeys(memberships.get(subject, oc.id));
+                if (!needed.some((k) => held.includes(k))) return deny('perk_missing', { ...base, entitlement: ent });
+            }
+        }
+        return { allow: true, reason: 'member', ...base, entitlement: ent };
+    }
+
     /**
      * May `subject` see `resource`, owned (says the product) by creator `owner`? { allow, reason, rule,
      * entitlement }. `ruleId` pins the rule the product believes applies (a mismatch denies).
      * mode: 'auto' (default) or 'authoritative'.
      */
-    async function evaluate({ subject, resource, owner = null, ruleId = null, mode = 'auto', traceparent }) {
+    async function evaluate({ subject, resource, owner = null, ruleId = null, mode = 'auto', fallback = null, traceparent }) {
         let r;
         try { r = entityRef(resource); } catch { return deny('invalid_resource'); }
+        let fb;
+        try { fb = cleanFallback(fallback); } catch { return deny('invalid_fallback'); }
         if (!owner) return deny('owner_required');
-        const oc = ownerCreator(owner);
+        let oc = ownerCreator(owner);
+        // A creator VIP has never seen can still hold Billing subscriptions: the default gate asks for them.
+        if (!oc && fb && !ruleId && owner !== 'network') {
+            const s = owner && typeof owner === 'object' ? owner.id : owner;
+            if (isUserSubject(String(s || ''))) oc = { id: null, subject: String(s), status: 'active', kind: 'creator' };
+        }
         if (!oc) return deny('no_rule');
-        const rule = ruleId ? byId(String(ruleId)) : forResource(r, oc.id);
+        const rule = ruleId ? byId(String(ruleId)) : (oc.id ? forResource(r, oc.id) : null);
+        if (!rule && fb && !ruleId) return evaluateFallback({ subject, oc, fb, mode, traceparent });
         if (!rule) return deny('no_rule');
         if (ruleId && (rule.resource_service !== r.service || rule.resource_type !== r.type || rule.resource_id !== r.id)) return deny('rule_mismatch', { rule: present(rule) });
         if (rule.creator_id !== oc.id) return deny('owner_mismatch', { rule: present(rule) });
