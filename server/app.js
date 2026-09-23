@@ -86,7 +86,8 @@ function createApp(opts = {}) {
     app.get('/api/health', (req, res) => res.json({ ok: true, service: 'vip', version: VERSION, release: release.release, events: outbox.status() }));
     const readiness = createVipReadiness({ db, keys, config, outbox, now, release: release.release, fetchImpl });
     app.get('/api/ready', readiness.handler);
-    app.get('/release.json', release.handler);
+    // GET /release.json (ADR-016) and POST /release-metrics: open tabs' update reports into /metrics.
+    release.mount(app, { registry: metrics.registry });
 
     const consumer = consumerRouter({ domain, config, log });
     app.use('/internal', consumer.router);

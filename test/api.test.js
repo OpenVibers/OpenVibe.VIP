@@ -20,6 +20,8 @@ const { test, run } = harness('api');
         assert.strictEqual(h.json.service, 'vip');
         const rel = await t.call('GET', '/release.json', { token: null });
         assert.strictEqual(rel.json.service, 'vip');
+        assert.deepStrictEqual(require('openvibe-contracts').validate('registry.release-manifest@1', rel.json).errors, []);
+        assert.strictEqual(rel.json.metrics_url, '/release-metrics');
         // Billing down: VIP stays ready (the projection still answers while fresh) and says so.
         t.billing.state.down = true;
         const r = await t.call('GET', '/api/ready', { token: null });
