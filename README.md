@@ -60,8 +60,8 @@ home that is not a cache.
 - **OpenVibe.Network** — RS256 service and user tokens (JWKS), OAuth sign-in for the pages, identity
   resolve (importer only).
 - **OpenVibe.Events** — delivery of Billing's events to `/internal/events`; relay of VIP's outbox.
-- **openvibe-contracts** v0.32.0, **openvibe-sdk** v0.5.0 (outbox, inbox, delivery signatures),
-  **openvibe-shared** v1.5.0 (chrome, legal pages, release manifest and update metrics, metrics, readiness).
+- **openvibe-contracts** v0.33.0, **openvibe-sdk** v0.5.0 (outbox, inbox, delivery signatures),
+  **openvibe-shared** v1.5.1 (chrome, legal pages, release manifest and update metrics, metrics, readiness).
 - Consumers, through the client below: Chat (the member badge), Community (members-only spaces and
   threads) and Blog (members-only posts); Live and Wiki are not wired yet.
 - **Not** OpenVibe.Live: VIP works with Live unavailable (nothing here calls Live).
