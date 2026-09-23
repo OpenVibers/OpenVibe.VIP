@@ -166,9 +166,9 @@ handle or `network`.
 | `POST /memberships/:creator/cancel` | — | self only | cancel at period end through Billing |
 | `PUT /memberships/:creator/preferences` | — | self only | `{ show_badge, listed }` |
 | `GET\|POST /entitlements/check` `{subject, creator, mode}` | `vip.entitlement.check` | self | `{ status: active\|inactive\|unknown, active, expires_at, cancel_at_period_end, source, stale, valid_until, membership }` |
-| `GET /policies?service=&type=&id=` / `?creator=` | `vip.resource.policy.get` | owner | the rule for a resource / a creator's rules |
+| `GET /policies?service=&type=&id=&owner=` / `?creator=` (services must name `owner`; a person defaults to themselves) | `vip.resource.policy.get` | owner | the rule for a resource / a creator's rules |
 | `POST /policies`, `DELETE /policies/:id` | `vip.resource.policy.set` *(proposed addition)* | owner | gate / un-gate a resource `{resource, requirement: member\|plan\|perk, plan_id, perk_key, sensitive}` |
-| `POST /policies/evaluate` `{subject, resource, rule_id?, mode?}` | `vip.resource.policy.evaluate` | self | `{ allow, reason, rule, entitlement }` — **fails closed** |
+| `POST /policies/evaluate` `{subject, resource, owner, rule_id?, mode?}` — `owner` = the creator the PRODUCT says owns the resource (usr_ id or `network`); only that creator's rule applies, none → `owner_required` | `vip.resource.policy.evaluate` | self | `{ allow, reason, rule, entitlement }` — **fails closed** |
 | `GET /creators/:ref/members` | `vip.creator.members.list` | owner / staff | active members with their plan version; from Billing, or the labelled projection when Billing is down |
 
 Evaluate reasons: `member`, `owner`, `no_rule`, `rule_mismatch`, `rule_disabled`, `invalid_resource`,

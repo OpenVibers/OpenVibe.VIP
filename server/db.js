@@ -157,8 +157,10 @@ CREATE TABLE IF NOT EXISTS vip_gated_resource_rules (
     CHECK (requirement <> 'plan' OR plan_id IS NOT NULL),
     CHECK (requirement <> 'perk' OR perk_key IS NOT NULL)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_vip_rules_resource
-    ON vip_gated_resource_rules (resource_service, resource_type, resource_id) WHERE status = 'active';
+-- One active rule per (resource, creator): the product names the owner when it asks (policies.js).
+DROP INDEX IF EXISTS idx_vip_rules_resource;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vip_rules_resource_creator
+    ON vip_gated_resource_rules (resource_service, resource_type, resource_id, creator_id) WHERE status = 'active';
 
 CREATE TABLE IF NOT EXISTS vip_migration_maps (
     source        TEXT NOT NULL,

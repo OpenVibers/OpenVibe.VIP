@@ -264,7 +264,11 @@ function v1Router({ domain, apiAuth }) {
         needAuth(p);
         if (req.query.service || req.query.type || req.query.id) {
             const resource = entityRef({ service: req.query.service, type: req.query.type, id: req.query.id });
-            const rule = policies.forResource(resource);
+            // Rules are per creator: name the owner (services must; a person defaults to themselves).
+            const owner = req.query.owner ? policies.ownerCreator(req.query.owner === 'network' ? 'network' : String(req.query.owner))
+                : (p.kind === 'user' ? creators.bySubject(p.subject) : null);
+            if (!req.query.owner && p.kind !== 'user') fail(422, 'vip.invalid_input', 'owner (the creator\'s usr_ id or network) is required');
+            const rule = owner ? policies.forResource(resource, owner.id) : null;
             if (p.kind === 'service' && !granted(p, CAP.policyGet)) denied(CAP.policyGet);
             if (!rule || (p.kind === 'user' && !mayManage(p, creators.byId(rule.creator_id), CAP.policyGet))) fail(404, 'vip.rule_not_found', 'no rule for that resource');
             return res.json({ rule: policies.present(rule) });
@@ -308,7 +312,7 @@ function v1Router({ domain, apiAuth }) {
             const s = b.subject && typeof b.subject === 'object' ? b.subject.id : b.subject;
             subject = s ? String(s) : null;
         }
-        const out = await policies.evaluate({ subject, resource: b.resource, ruleId: b.rule_id, mode: b.mode === 'authoritative' ? 'authoritative' : 'auto', traceparent: trace(req) });
+        const out = await policies.evaluate({ subject, resource: b.resource, owner: b.owner || null, ruleId: b.rule_id, mode: b.mode === 'authoritative' ? 'authoritative' : 'auto', traceparent: trace(req) });
         res.json(out);
     }));
 

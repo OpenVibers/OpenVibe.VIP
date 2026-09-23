@@ -9,7 +9,7 @@
  *       audience: 'openvibe.vip', scope: 'vip.resource.policy.evaluate vip.entitlement.check' });
  *   const vip = createVipClient({ baseUrl: 'http://127.0.0.1:4620', tokenClient: tokens });
  *
- *   const d = await vip.evaluate({ subject: viewerSubjectOrNull, resource: { service: 'blog', type: 'post', id: '42' } });
+ *   const d = await vip.evaluate({ subject: viewerSubjectOrNull, resource: { service: 'blog', type: 'post', id: '42' }, owner: authorSubject });
  *   if (!d.allow) return renderTeaser(d.reason);        // FAILS CLOSED
  *
  *   const e = await vip.checkEntitlement({ subject: 'usr_…', creator: 'usr_…' });  // e.active
@@ -46,9 +46,9 @@ function createVipClient({ baseUrl = 'http://127.0.0.1:4620', tokenClient = null
     const note = (what, err) => { if (log && log.warn) log.warn(`[vip-client] ${what} failed closed: ${err.message}`); };
 
     /** May `subject` (a usr_ id, a SubjectRef, or null for a signed-out viewer) see `resource`? */
-    async function evaluate({ subject = null, resource, ruleId, mode } = {}) {
+    async function evaluate({ subject = null, resource, owner = null, ruleId, mode } = {}) {
         try {
-            const d = await post('/api/v1/policies/evaluate', { subject: subject || null, resource, rule_id: ruleId, mode });
+            const d = await post('/api/v1/policies/evaluate', { subject: subject || null, resource, owner, rule_id: ruleId, mode });
             return { ...d, allow: d.allow === true, reason: d.reason || (d.allow === true ? 'member' : 'denied') };
         } catch (err) {
             note('evaluate', err);

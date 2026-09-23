@@ -5,7 +5,12 @@
  * members of one plan, or for members whose plan VERSION includes perk K. A product stores the
  * resource; VIP stores only the typed reference (EntityRef) and the rule.
  *
- * evaluate() FAILS CLOSED: no rule, a disabled rule, a suspended creator, an entitlement Billing
+ * A rule belongs to one creator, and several creators may each hold a rule for the same reference:
+ * VIP cannot tell who owns a product's resource, so the PRODUCT names the owner when it asks
+ * (evaluate's `owner`) and only that creator's rule applies. Otherwise anyone could claim a
+ * reference first — blocking the real owner (409) and gating it to their own members.
+ *
+ * evaluate() FAILS CLOSED: no owner, no rule, a disabled rule, a suspended creator, an entitlement Billing
  * cannot confirm ("unknown"), a missing perk or any error → allow: false with the reason. Rules
  * marked sensitive always ask Billing directly (never the projection).
  */
@@ -13,8 +18,14 @@ const { fail, prefixedId, iso, entityRef, isUserSubject, text } = require('../ut
 
 function createPolicies({ db, now, creators, plans, perks, memberships, entitlements }) {
     const byId = (id) => db.prepare('SELECT * FROM vip_gated_resource_rules WHERE id = ?').get(id) || null;
-    const forResource = (r) => db.prepare(`SELECT * FROM vip_gated_resource_rules WHERE resource_service = ? AND resource_type = ? AND resource_id = ? AND status = 'active'`)
-        .get(r.service, r.type, r.id) || null;
+    const forResource = (r, creatorId) => db.prepare(`SELECT * FROM vip_gated_resource_rules WHERE resource_service = ? AND resource_type = ? AND resource_id = ? AND creator_id = ? AND status = 'active'`)
+        .get(r.service, r.type, r.id, creatorId) || null;
+    /** The creator a product names as a resource's owner: SubjectRef, usr_ id, or 'network'. */
+    function ownerCreator(owner) {
+        if (owner === 'network') return creators.network();
+        const s = owner && typeof owner === 'object' ? owner.id : owner;
+        return isUserSubject(String(s || '')) ? creators.bySubject(String(s)) : null;
+    }
 
     /** Create or replace the active rule for a resource. */
     function set({ creatorId, resource, requirement = 'member', planId = null, perkKey = null, sensitive = false, actor = null }) {
@@ -30,8 +41,7 @@ function createPolicies({ db, now, creators, plans, perks, memberships, entitlem
             perkKey = text(perkKey, 'perk_key', 48, { required: true });
             if (!perks.byKey(creatorId, perkKey) && !perks.byKey('network', perkKey)) fail(422, 'vip.perk_not_found', `no perk ${perkKey} for this creator`);
         } else perkKey = null;
-        const existing = forResource(r);
-        if (existing && existing.creator_id !== creatorId) fail(409, 'vip.rule_conflict', 'another creator already gates this resource');
+        const existing = forResource(r, creatorId);
         const at = iso(now());
         const id = prefixedId('vgr', now());
         db.transaction(() => {
@@ -65,15 +75,20 @@ function createPolicies({ db, now, creators, plans, perks, memberships, entitlem
     const deny = (reason, extra = {}) => ({ allow: false, reason, ...extra });
 
     /**
-     * May `subject` see `resource`? { allow, reason, rule, entitlement }. `ruleId` pins the rule the
-     * product believes applies (a mismatch denies). mode: 'auto' (default) or 'authoritative'.
+     * May `subject` see `resource`, owned (says the product) by creator `owner`? { allow, reason, rule,
+     * entitlement }. `ruleId` pins the rule the product believes applies (a mismatch denies).
+     * mode: 'auto' (default) or 'authoritative'.
      */
-    async function evaluate({ subject, resource, ruleId = null, mode = 'auto', traceparent }) {
+    async function evaluate({ subject, resource, owner = null, ruleId = null, mode = 'auto', traceparent }) {
         let r;
         try { r = entityRef(resource); } catch { return deny('invalid_resource'); }
-        const rule = ruleId ? byId(String(ruleId)) : forResource(r);
+        if (!owner) return deny('owner_required');
+        const oc = ownerCreator(owner);
+        if (!oc) return deny('no_rule');
+        const rule = ruleId ? byId(String(ruleId)) : forResource(r, oc.id);
         if (!rule) return deny('no_rule');
         if (ruleId && (rule.resource_service !== r.service || rule.resource_type !== r.type || rule.resource_id !== r.id)) return deny('rule_mismatch', { rule: present(rule) });
+        if (rule.creator_id !== oc.id) return deny('owner_mismatch', { rule: present(rule) });
         if (rule.status !== 'active') return deny('rule_disabled', { rule: present(rule) });
         const creator = creators.byId(rule.creator_id);
         if (!creator || creator.status !== 'active' || !creator.subject) return deny('creator_unavailable', { rule: present(rule) });
@@ -93,7 +108,7 @@ function createPolicies({ db, now, creators, plans, perks, memberships, entitlem
         return { allow: true, reason: 'member', rule: present(rule), entitlement: ent };
     }
 
-    return { byId, forResource, set, disable, list, present, evaluate };
+    return { byId, forResource, ownerCreator, set, disable, list, present, evaluate };
 }
 
 module.exports = { createPolicies };
