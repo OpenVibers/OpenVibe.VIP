@@ -13,6 +13,7 @@
  * Every POST needs the signed-in viewer and the form's anti-forgery token; it acts through the same
  * domain calls as the API and redirects back with a notice (?ok= / ?error=).
  */
+const crypto = require('crypto');
 const express = require('express');
 const { VipError, bool } = require('../util');
 const { viewerMiddleware } = require('./session');
@@ -38,7 +39,20 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
 
     const send = (res, status, o) => res.status(status).type('html').send(layout.page(o));
     const notFound = (req, res) => send(res, 404, { title: 'Not found', robots: 'noindex', viewer: req.viewer, body: pages.errorPage({ status: 404, title: 'Nothing here', message: 'That page does not exist.' }) });
-    const back = (res, path, kind, msg) => res.redirect(303, `${path}${path.includes('?') ? '&' : '?'}${kind}=${encodeURIComponent(msg)}`);
+    // Notices ride in the redirect (?ok= / ?error=) and carry an HMAC of their text, so a crafted
+    // link cannot put words of its choosing on a VIP page (e.g. "send your Vibes to …").
+    const noticeSig = (kind, msg) => crypto.createHmac('sha256', String(config.formSecret || '')).update(`notice|${kind}|${msg}`).digest('base64url').slice(0, 22);
+    const back = (res, path, kind, msg) => res.redirect(303, `${path}${path.includes('?') ? '&' : '?'}${kind}=${encodeURIComponent(msg)}&ns=${noticeSig(kind, msg)}`);
+    router.use((req, res, next) => {
+        for (const kind of ['ok', 'error']) {
+            const msg = req.query[kind];
+            if (msg === undefined) continue;
+            const sig = String(req.query.ns || '');
+            const want = typeof msg === 'string' && config.formSecret ? noticeSig(kind, msg) : null;
+            if (!want || sig.length !== want.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))) delete req.query[kind];
+        }
+        next();
+    });
     const list = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]).map(String).filter(Boolean);
     const lines = (v) => String(v || '').split('\n').map((s) => s.trim()).filter(Boolean);
 

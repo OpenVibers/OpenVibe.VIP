@@ -186,11 +186,26 @@ function v1Router({ domain, apiAuth }) {
     }));
 
     // ── Checkout hand-off (Billing) ──────────────────────────
+    const ownOrigin = (() => { try { return new URL(domain.config.baseUrl).origin; } catch { return null; } })();
+    /**
+     * A return URL a person asked for: only pages of this site. Billing hands these to the payment
+     * provider, which sends the buyer there after paying or cancelling — anything else would make
+     * a provider-hosted checkout link an open redirect to a look-alike page.
+     */
+    function returnUrl(req, v, field) {
+        if (v == null || v === '') return undefined;
+        if (req.principal.kind === 'service') return String(v);
+        let u;
+        try { u = new URL(String(v)); } catch { u = null; }
+        if (!u || !ownOrigin || u.origin !== ownOrigin) fail(422, 'vip.invalid_input', `${field} must be a page of ${ownOrigin || 'this site'}`);
+        return u.toString();
+    }
     r.post('/checkout', wrap(async (req, res) => {
         const b = req.body || {};
         const member = memberSubject(req, b.subject, CAP.checkout);
         const out = await checkout.start({
-            member, planId: b.plan_id, provider: b.provider, successUrl: b.success_url, cancelUrl: b.cancel_url,
+            member, planId: b.plan_id, provider: b.provider,
+            successUrl: returnUrl(req, b.success_url, 'success_url'), cancelUrl: returnUrl(req, b.cancel_url, 'cancel_url'),
             autoRenew: b.auto_renew === undefined ? true : bool(b.auto_renew), traceparent: trace(req),
         });
         res.status(201).json(out);
