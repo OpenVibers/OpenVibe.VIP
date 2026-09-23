@@ -20,7 +20,7 @@ const { viewerMiddleware } = require('./session');
 const { createForms } = require('./forms');
 const pages = require('./pages');
 
-const RESERVED = new Set(['me', 'dashboard', 'auth', 'api', 'internal', 'css', 'js', 'terms', 'privacy', 'dmca', 'robots.txt', 'sitemap.xml', 'release.json', 'metrics', 'favicon.ico']);
+const RESERVED = new Set(['me', 'dashboard', 'auth', 'api', 'internal', 'css', 'js', 'terms', 'privacy', 'dmca', 'robots.txt', 'sitemap.xml', 'release.json', 'metrics', 'favicon.ico', 'embed']);
 
 function createWebRoutes({ domain, config, layout, userAuth }) {
     const router = express.Router();
@@ -71,7 +71,7 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
         });
     }
 
-    router.get('/robots.txt', (req, res) => res.type('text/plain').send(`User-agent: *\nDisallow: /me\nDisallow: /dashboard\nDisallow: /auth/\nDisallow: /api/\nSitemap: ${config.baseUrl}/sitemap.xml\n`));
+    router.get('/robots.txt', (req, res) => res.type('text/plain').send(`User-agent: *\nDisallow: /me\nDisallow: /dashboard\nDisallow: /auth/\nDisallow: /api/\nDisallow: /embed/\nSitemap: ${config.baseUrl}/sitemap.xml\n`));
     router.get('/sitemap.xml', (req, res) => {
         const urls = [`${config.baseUrl}/`, ...creators.listPublic({ limit: 5000 }).map((c) => `${config.baseUrl}/${encodeURIComponent(c.username)}`)];
         res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((u) => `<url><loc>${u.replace(/&/g, '&amp;')}</loc></url>`).join('\n')}\n</urlset>\n`);
@@ -144,6 +144,7 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
                 body: pages.dashboard({
                     viewer: req.viewer, creator, isNetwork, isStaff: isStaff(req.viewer), plans: planRows, allPerks, ownPerks, members, membersSource,
                     rules: isNetwork ? [] : policies.list(creator.id).map(policies.present), token: forms.token(req.viewer.subject), query: req.query, base: isNetwork ? '/dashboard/network' : '/dashboard',
+                    embeds: !isNetwork && creator.username ? domain.cards.urls(creator) : null,
                 }),
             });
         } catch (e) { next(e); }
@@ -157,7 +158,7 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
         post(`${base}/profile`, async (req, res, to) => {
             withAs(req);
             const c = dashCreator(req);
-            creators.update(c.id, { displayName: req.body.display_name, bio: req.body.bio });
+            creators.update(c.id, { displayName: req.body.display_name, bio: req.body.bio, showMemberCount: c.kind === 'creator' ? bool(req.body.show_member_count) : undefined });
             back(res, to, 'ok', 'Profile saved.');
         }, opts);
         post(`${base}/plans`, async (req, res, to) => {

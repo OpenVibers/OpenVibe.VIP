@@ -89,6 +89,15 @@ function loadConfig(env = process.env) {
             refreshIntervalMs: int(env.VIP_REFRESH_INTERVAL_MS, 60 * 1000),
         },
         liveUrl: trim(env.LIVE_URL || 'https://openvibe.live'),
+
+        // The public card, badge and widget (/embed, server/web/embeds.js). frameAncestors is the
+        // widget's CSP frame-ancestors (any site by default: it is meant to be embedded; the rest of
+        // VIP stays 'self'). The member count comes from Billing, cached for memberCountTtlMs.
+        embeds: {
+            // Source expressions only: a ';' or a line break would start another CSP directive.
+            frameAncestors: String(env.VIP_WIDGET_FRAME_ANCESTORS || '*').replace(/[;,\r\n]+/g, ' ').replace(/\s+/g, ' ').trim() || '*',
+            memberCountTtlMs: int(env.VIP_MEMBER_COUNT_TTL_MS, 5 * 60 * 1000),
+        },
     };
 }
 

@@ -169,7 +169,23 @@ ${actions}
 <details><summary>Versions (${esc((plan.versions || []).length)})</summary><ul class="versions">${versions}</ul></details></article>`;
 }
 
-function dashboard({ viewer, creator, isNetwork, isStaff, plans, allPerks, ownPerks, members, membersSource, rules, token, query, base }) {
+/** The dashboard's "Share" card: the public card, badge and widget, and the member count switch. */
+function shareCard({ creator, embeds, hasPlan }) {
+    if (!embeds) return '';
+    if (!hasPlan) return '<section class="card"><h2>Share your memberships</h2><p class="muted">Publish a plan to get a member badge, a card and a widget for your other sites.</p></section>';
+    // The snippets are HTML the creator pastes elsewhere: escaped as HTML first, then again for the input.
+    const name = esc(creator.display_name || creator.username);
+    const img = `<a href="${esc(embeds.page)}"><img src="${esc(embeds.badge)}" alt="Member of ${name} on OpenVibe.VIP" height="20"></a>`;
+    const frame = `<iframe src="${esc(embeds.widget)}" title="${name} memberships" width="320" height="180" style="border:0" loading="lazy"></iframe>`;
+    return `<section class="card"><h2>Share your memberships</h2>
+<p class="muted small">For your stream page, your site or anywhere else. They show your published plans${creator.show_member_count ? ' and how many members you have' : ''}, never who your members are, and they set no cookies.</p>
+<p><img src="${esc(embeds.badge)}" alt="" height="20"></p>
+<label>Badge (HTML) <input readonly value="${esc(img)}"></label>
+<label>Widget (HTML; add <code>?theme=light</code> or <code>?theme=dark</code> to fix its colours) <input readonly value="${esc(frame)}"></label>
+<label>Card for developers (JSON, open to any site) <input readonly value="${esc(embeds.card)}"></label></section>`;
+}
+
+function dashboard({ viewer, creator, isNetwork, isStaff, plans, allPerks, ownPerks, members, membersSource, rules, token, query, base, embeds }) {
     if (!viewer) {
         return `<section class="card narrow"><h1>Creator dashboard</h1><p>Sign in with your OpenVibe account to offer a membership plan.</p>
 <p><a class="button" href="/auth/login?next=%2Fdashboard">Sign in</a></p></section>`;
@@ -181,7 +197,9 @@ function dashboard({ viewer, creator, isNetwork, isStaff, plans, allPerks, ownPe
 ${isNetwork ? '' : `<section class="card"><h2>Profile</h2><form method="post" action="${base}/profile">${csrf(token)}
 <label>Display name <input name="display_name" maxlength="80" value="${esc(creator.display_name || '')}"></label>
 <label>About your memberships <textarea name="bio" maxlength="2000" rows="3">${esc(creator.bio || '')}</textarea></label>
-<button type="submit">Save</button></form></section>`}
+<label class="check"><input type="checkbox" name="show_member_count" value="1"${creator.show_member_count ? ' checked' : ''}> Show how many members you have on your card and widget</label>
+<button type="submit">Save</button></form></section>
+${shareCard({ creator, embeds, hasPlan: plans.some((p) => p.status === 'published') })}`}
 <section><h2>Plans</h2>${plans.length ? plans.map((p) => planEditor({ plan: p, allPerks, token, base })).join('') : '<p class="muted">No plans yet.</p>'}
 <details class="card"><summary>New plan</summary><form method="post" action="${base}/plans">${csrf(token)}
 <label>Name <input name="name" maxlength="80" required></label>

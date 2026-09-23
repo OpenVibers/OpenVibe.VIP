@@ -72,7 +72,7 @@ home that is not a cache.
 fnm exec --using=22.22.1 npm install
 cp .env.example .env                 # OV_OAUTH_CLIENT_SECRET, VIP_FORM_SECRET, VIP_EVENTS_SECRET, BILLING_URL …
 fnm exec --using=22.22.1 npm run dev # http://localhost:4620
-fnm exec --using=22.22.1 npm test    # 7 test files: stub Network + Billing, temp DBs, random ports, injected clock
+fnm exec --using=22.22.1 npm test    # every test/*.test.js: stub Network + Billing, temp DBs, random ports, injected clock
 node scripts/subscribe.js            # create the three Events subscriptions for Billing's events
 node scripts/import-live.js --live-db <live snapshot> [--billing-db <billing snapshot>] [--dry-run] [--json]
 ```
@@ -157,6 +157,7 @@ handle or `network`.
 |---|---|---|---|
 | `GET /api/health`, `/api/ready`, `/release.json`, `/metrics` | — | — | liveness; truthful readiness (db required; Network key and Billing optional → degraded); release; loopback metrics |
 | `GET /creators/:ref` | — (public) | owner sees drafts | creator, published plans, own perks |
+| `GET /creators/:ref/card` | — (public) | — | the membership card (below), the same as `/embed/:username/card.json` |
 | `GET /plans?creator=&include=drafts,archived` | `vip.plan.list` for drafts | owner | plans with current/draft versions |
 | `GET /plans/:id`, `GET /plans/:id/versions` | `vip.plan.list` for drafts | owner | a plan; its version history (published versions are public) |
 | `POST /plans` | `vip.plan.create` (body `creator`) | self / staff for `network` | create (v1), optionally `publish` |
@@ -244,13 +245,41 @@ README repeats its bound and its own test drives the product through a change.
 Live's badge mapping (`live chat_badge`, `live powerchat_overlay`, `live ai_context`) and Chat's
 (`chat badge`) are declared as product bindings of the network perk `subscriber-badge`.
 
+## Card, badge and widget (`/embed`)
+
+The reusable membership endpoints of roadmap §11.3, for a creator's stream page, their own site, or any
+other product. They cover creators with at least one published plan ([server/domain/cards.js](server/domain/cards.js),
+[server/web/embeds.js](server/web/embeds.js)):
+
+| Endpoint | What | Headers |
+|---|---|---|
+| `GET /embed/:username/card.json` (and `GET /api/v1/creators/:ref/card`) | plan names, descriptions, benefits and version (the terms new members buy), perks (key, name, kind), join and terms links, whether joining is open, Billing's price and period, the member count, the badge and widget URLs | `Access-Control-Allow-Origin: *` (no credentials), `Cache-Control: public, max-age=60` |
+| `GET /embed/:username/badge.svg` | a two-part badge, "★ <badge perk>" and the creator's name, for an `<img>` | `image/svg+xml`, CSP `default-src 'none'; sandbox`, `Cross-Origin-Resource-Policy: cross-origin`, cached 5 min |
+| `GET /embed/:username/widget[?theme=light\|dark]` | an HTML widget for an `<iframe>`: name, member count, up to three plans with their perks, a join link that opens openvibe.vip in a new tab | CSP `default-src 'none'`, the one inline style allowed by its hash, `form-action`/`base-uri 'none'`, `frame-ancestors` from `VIP_WIDGET_FRAME_ANCESTORS` (any site by default) |
+
+**Safe to embed:**
+- The endpoints are the same for everyone. They are mounted before the cookie parser and never read a
+  cookie, token or viewer, and they set no cookie.
+- They run no script.
+- They show nothing private: published plans only, never drafts or archived ones; perk names, never
+  product binding configs; a member count, never who. The creator can switch the count off in the
+  dashboard.
+- Every other VIP page keeps `frame-ancestors 'self'`. The nginx reference config serves `/embed/`
+  without the server-wide `X-Frame-Options`.
+
+**The member count** is Billing's: active subscriptions to the creator. It is reused for
+`VIP_MEMBER_COUNT_TTL_MS` (5 min), with one Billing call at a time per creator. When Billing does not
+answer, the last count is shown as `stale: true`, or no count at all. VIP never guesses from its
+projection, which only holds members someone asked about recently. The dashboard's *Share your
+memberships* card gives the creator the badge and widget HTML and the card URL.
+
 ## Pages (server-rendered, useful without JavaScript, shared chrome)
 
 `/` directory of creators with published plans · `/:username` a creator's plans (terms, perks,
 Billing's price and period from `GET /api/v1/rates`, join form) · `/:username/plans/:slug` public terms
 history · `/me` your memberships, the version you joined under, cancel, badge preference ·
-`/dashboard` plans, versions, perks and bindings, members, members-only resources
-(`?as=network` for staff) · `/robots.txt`, `/sitemap.xml` · `/terms`, `/privacy`, `/dmca`
+`/dashboard` plans, versions, perks and bindings, members, members-only resources, the badge and
+widget to share and the member-count switch (`?as=network` for staff) · `/embed/:username/…` (above) · `/robots.txt`, `/sitemap.xml` · `/terms`, `/privacy`, `/dmca`
 (openvibe-shared legal). Navbar from `https://openvibe.network/shared/navbar.js`, SSR footer and
 `<noscript>` navigation from openvibe-shared. Forms carry HMAC anti-forgery tokens
 (`VIP_FORM_SECRET`); cookies are SameSite=Lax. No feed: plans are not a publication stream.
@@ -302,6 +331,10 @@ final import), `scripts/subscribe.js`, then open checkout (`VIP_CHECKOUT_PROVIDE
 - Outbound calls go only to configured service URLs (Network, Billing, Events); no user-supplied
   URLs are fetched. Checkout redirects only to http(s) URLs Billing returned.
 - Secrets appear as environment variable names only.
+- The embeds (`/embed`) read no cookie or token and set none; the widget runs no script, and its CSP
+  allows only its own hashed style. `VIP_WIDGET_FRAME_ANCESTORS` is reduced to source expressions, so it
+  cannot add a CSP directive. The badge SVG is served sandboxed, with every name escaped.
+  `test/embeds.test.js` covers all of this.
 
 ## Acceptance (what the tests prove)
 
@@ -315,6 +348,7 @@ final import), `scripts/subscribe.js`, then open checkout (`VIP_CHECKOUT_PROVIDE
 | gated-resource evaluation fails closed (no rule, unknown, perk missing, guest, VIP down in the client) | `test/policies.test.js` |
 | import idempotent, holds released, dry run keeps nothing, Billing outage reported | `test/import.test.js` |
 | VIP works with Live unavailable | no code path calls Live; every test runs without a Live stub |
+| a creator's membership card, badge and widget are public-data only, the same for everyone, embeddable and inert | `test/embeds.test.js` (published plans only, no subjects or binding configs, no cookie read or set, CORS, SVG escaping and sandbox, the widget's frame-ancestors and hashed style, the creator's member-count switch, Billing outage keeps the last count or shows none) |
 
 Not yet demonstrated (needs the other services): convergence **across consuming products** (Live,
 Chat, Community do not call VIP yet), and a real Billing/Events round trip on the host (Billing is in

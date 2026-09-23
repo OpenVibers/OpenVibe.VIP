@@ -47,12 +47,13 @@ function createCreators({ db, now }) {
         return row;
     }
 
-    function update(id, { displayName, bio }) {
+    function update(id, { displayName, bio, showMemberCount }) {
         const row = byId(id);
         if (!row) fail(404, 'vip.creator_not_found', `no creator ${id}`);
         const name = displayName !== undefined ? text(displayName, 'display_name', 80) : row.display_name;
         const about = bio !== undefined ? text(bio, 'bio', 2000) : row.bio;
-        db.prepare('UPDATE vip_creators SET display_name = ?, bio = ?, updated_at = ? WHERE id = ?').run(name, about, iso(now()), id);
+        const count = showMemberCount !== undefined ? (showMemberCount ? 1 : 0) : row.show_member_count;
+        db.prepare('UPDATE vip_creators SET display_name = ?, bio = ?, show_member_count = ?, updated_at = ? WHERE id = ?').run(name, about, count, iso(now()), id);
         return byId(id);
     }
 

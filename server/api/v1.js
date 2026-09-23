@@ -107,6 +107,13 @@ function v1Router({ domain, apiAuth }) {
         });
     }));
 
+    /** The public membership card (server/domain/cards.js): what /embed/:username/card.json serves. */
+    r.get('/creators/:ref/card', wrap(async (req, res) => {
+        const card = await domain.cards.card(findCreator(req.params.ref));
+        if (!card) fail(404, 'vip.creator_not_found', 'no public membership card for this creator');
+        res.json({ card });
+    }));
+
     // ── Plans ────────────────────────────────────────────────
     r.get('/plans', wrap((req, res) => {
         const c = findCreator(req.query.creator);

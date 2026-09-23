@@ -240,8 +240,26 @@ function openDb(dbPath) {
     return db;
 }
 
+/**
+ * Columns added after the first schema, for new and existing databases alike (ALTER TABLE … ADD
+ * COLUMN when missing; idempotent, never rewrites a row).
+ */
+const COLUMNS = [
+    // The creator's choice: their member count on the public card and widget (server/domain/cards.js).
+    ['vip_creators', 'show_member_count', 'INTEGER NOT NULL DEFAULT 1'],
+];
+
+function addColumns(db) {
+    const have = new Map();
+    for (const [table, name, def] of COLUMNS) {
+        if (!have.has(table)) have.set(table, new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name)));
+        if (!have.get(table).has(name)) { db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${def}`); have.get(table).add(name); }
+    }
+}
+
 function migrate(db) {
     db.exec(SCHEMA);
+    db.transaction(() => addColumns(db))();
     const now = new Date().toISOString();
     db.prepare('INSERT OR IGNORE INTO settings (id, created_at) VALUES (1, ?)').run(now);
     // The network itself offers network-wide plans and owns network perks.
@@ -249,4 +267,4 @@ function migrate(db) {
         VALUES ('network', 'network', NULL, NULL, NULL, 'OpenVibe', 'system', ?, ?)`).run(now, now);
 }
 
-module.exports = { openDb, migrate };
+module.exports = { openDb, migrate, COLUMNS };

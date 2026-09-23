@@ -10,6 +10,7 @@
  *   /api/v1/*                     API (service tokens + user tokens, see api/v1.js)
  *   POST /internal/events         Billing events from OpenVibe.Events (signed webhook + inbox)
  *   /auth/*                       Network SSO session for the pages
+ *   /embed/:username/card.json|badge.svg|widget   public card, badge and widget (no cookies, see web/embeds.js)
  *   /, /me, /dashboard, /:username …  server-rendered pages
  *
  * createApp({ config, db, keys, billing, outbox, now, fetchImpl, eventsFetch, log }) — all injectable.
@@ -29,6 +30,7 @@ const { createApiAuth } = require('./api/auth');
 const { v1Router } = require('./api/v1');
 const { createSessionRoutes } = require('./web/session');
 const { createWebRoutes } = require('./web/routes');
+const { createEmbedRoutes } = require('./web/embeds');
 const { createLayout, assetVersion } = require('./web/layout');
 const { createVipReadiness } = require('./observability');
 const pages = require('./web/pages');
@@ -77,6 +79,8 @@ function createApp(opts = {}) {
         ].join('; '));
         next();
     });
+    // Embeds come before the cookie parser: they are the same for everyone and never read a cookie.
+    app.use('/embed', createEmbedRoutes({ domain, config }));
     app.use(cookieParser());
 
     app.get('/api/health', (req, res) => res.json({ ok: true, service: 'vip', version: VERSION, release: release.release, events: outbox.status() }));

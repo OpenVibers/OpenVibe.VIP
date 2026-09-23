@@ -8,6 +8,7 @@ const { createMemberships } = require('./memberships');
 const { createEntitlements } = require('./entitlements');
 const { createPolicies } = require('./policies');
 const { createCheckout } = require('./checkout');
+const { createCards } = require('./cards');
 
 function createDomain({ db, config, outbox, billing, now = () => Date.now(), log = console }) {
     const creators = createCreators({ db, now });
@@ -17,8 +18,9 @@ function createDomain({ db, config, outbox, billing, now = () => Date.now(), log
     const entitlements = createEntitlements({ db, now, config, billing, outbox, memberships, plans, log });
     const policies = createPolicies({ db, now, creators, plans, perks, memberships, entitlements });
     const checkout = createCheckout({ db, now, config, billing, creators, plans, entitlements });
+    const cards = createCards({ db, config, creators, plans, perks, billing, now, log });
     const tx = (fn) => db.transaction(fn)();
-    return { db, config, now, tx, outbox, billing, creators, perks, plans, memberships, entitlements, policies, checkout };
+    return { db, config, now, tx, outbox, billing, creators, perks, plans, memberships, entitlements, policies, checkout, cards };
 }
 
 module.exports = { createDomain };

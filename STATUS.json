@@ -16,14 +16,14 @@
     "outbox events vip.plan.published and vip.membership.changed (openvibe-sdk)",
     "import of Live's subscription offering, memberships from Billing entitlements",
     "14 vip.* capabilities, the service manifest and its events registered in openvibe-contracts v0.19.0",
-    "deployed on the host (loopback only) with truthful /api/ready and /metrics; restore drill passed on the host 2026-09-23 05:23 UTC"
+    "deployed on the host (loopback only) with truthful /api/ready and /metrics; restore drill passed on the host 2026-09-23 05:23 UTC",
+    "reusable membership card (GET /embed/:username/card.json, GET /api/v1/creators/:ref/card), badge (/embed/:username/badge.svg) and embeddable widget (/embed/:username/widget): public data only, no cookies, the widget's CSP frame-ancestors configurable (VIP_WIDGET_FRAME_ANCESTORS), member count from Billing that the creator can hide (not deployed yet)"
   ],
   "not_yet": [
     "not launched: openvibe.vip is still an OpenVibe.Sites placeholder and the service answers on loopback only",
     "checkout is closed until the Billing cutover (Billing runs in shadow; the owner must re-point the PowerChat webhook first); no billing.* event has reached VIP",
     "the Live subscription import (scripts/import-live.js) has not been run (vip_migration_maps 0)",
     "Chat, Community and Blog call VIP in code only: not deployed, and the Network has no vip.* grants for them yet; Live and Wiki do not call VIP",
-    "membership badge, card and widget endpoints",
     "Billing sells one channel subscription per member and creator: one purchasable plan per creator, no tiers, no network membership product"
   ],
   "updated": "2026-09-23"
