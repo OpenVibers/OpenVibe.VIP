@@ -232,6 +232,21 @@ Idempotent (keys in `vip_migration_maps`), never overwrites a creator's later ed
 on a later run; `--dry-run` rolls everything back; exit 1 when Billing could not be read. Live's
 `sub_price_usd`/share/fee are reported for reference only — Billing prices.
 
+## Before and after the Billing cutover
+
+Billing runs in shadow mode until the Wave 8 cutover (Live stays authoritative for money,
+`BILLING_AUTHORITY=live`). Until then:
+
+- keep **checkout closed** (`VIP_CHECKOUT_PROVIDERS=` empty): a subscription sold through Billing
+  now would be one Live does not know about. Plan pages say joining is not open yet; the API answers
+  `422 vip.checkout.provider_unavailable`;
+- VIP can run read-only against Billing's shadow entitlements (imported from Live), which are only as
+  current as Billing's last import; new Live subscriptions do not reach Billing (or VIP) before the cutover;
+- Billing publishes its events only when its own `EVENTS_URL` is set.
+
+After the cutover: run `scripts/import-live.js` against the final Live snapshot (after Billing's
+final import), `scripts/subscribe.js`, then open checkout (`VIP_CHECKOUT_PROVIDERS=powerchat,credit`).
+
 ## Security notes
 
 - Every API route checks one capability (services) or ownership (users); a presented token is judged

@@ -58,7 +58,8 @@ function loadConfig(env = process.env) {
             timeoutMs: int(env.VIP_BILLING_TIMEOUT_MS, 5000),
             // Checkout providers offered on the plan pages (each must be enabled on Billing too).
             // `credit` pays from the member's Vibes credit through Billing's subscription API.
-            providers: list(env.VIP_CHECKOUT_PROVIDERS || 'powerchat,credit'),
+            // Empty (set but blank) closes checkout — the setting until Billing is authoritative.
+            providers: list(env.VIP_CHECKOUT_PROVIDERS != null ? env.VIP_CHECKOUT_PROVIDERS : 'powerchat,credit'),
             // Billing answers a PowerChat intent with a checkout_ref (pcsub:…) instead of a URL. When
             // set, this template turns it into a link: {ref} and {cents} are filled in.
             powerchatLinkTemplate: env.VIP_POWERCHAT_LINK_TEMPLATE || '',

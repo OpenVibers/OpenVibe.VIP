@@ -71,6 +71,7 @@ ${member.membership && member.membership.plan_version ? `<p class="muted">You jo
             ? '<p class="muted">This plan is not sold through Billing yet.</p>'
             : isOwner ? '<p class="muted">This is your plan.</p>'
                 : member && member.status === 'active' ? ''
+                    : !providers.length ? '<p class="muted">Joining through OpenVibe.Billing is not open yet.</p>'
                     : viewer
                         ? `<form method="post" action="/${encodeURIComponent(creator.username)}/join" class="join">${csrf(token)}<input type="hidden" name="plan_id" value="${esc(p.id)}">
 <label>Pay with <select name="provider">${providers.map((x) => `<option value="${esc(x)}">${esc(x === 'credit' ? 'your Vibes credit' : x === 'powerchat' ? 'PowerChat' : x)}</option>`).join('')}</select></label>

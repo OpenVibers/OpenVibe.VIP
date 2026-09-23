@@ -227,5 +227,19 @@ const { test, run } = harness('api');
         assert.strictEqual(bad.status, 401);
     });
 
+    test('checkout closed (VIP_CHECKOUT_PROVIDERS empty, before the Billing cutover): pages say so, the API refuses', async () => {
+        const t2 = await boot({ env: { VIP_CHECKOUT_PROVIDERS: '' } });
+        try {
+            const c = t2.network.newUser('uma', { role: 'streamer' });
+            const p = (await t2.call('POST', '/api/v1/plans', { user: c, body: { name: 'Club', publish: true } })).json.plan;
+            const page = await t2.page('/uma', { user: t2.network.newUser('vic') });
+            assert.match(page.text, /Joining through OpenVibe\.Billing is not open yet/);
+            assert.doesNotMatch(page.text, /<select name="provider">/);
+            const r = await t2.call('POST', '/api/v1/checkout', { user: t2.network.newUser('wes'), body: { plan_id: p.id, provider: 'powerchat' } });
+            assert.strictEqual(r.status, 422);
+            assert.strictEqual(r.json.code, 'vip.checkout.provider_unavailable');
+        } finally { await t2.close(); }
+    });
+
     await run().finally(() => t.close());
 })();
