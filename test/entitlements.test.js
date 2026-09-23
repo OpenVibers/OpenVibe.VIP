@@ -5,7 +5,7 @@
  * valid_until (+ grace); ordering and duplicates are safe. Injected clock throughout.
  */
 const assert = require('assert');
-const { signDelivery } = require('openvibe-sdk/events');
+const { signDeliveryHeaders } = require('openvibe-sdk/events');
 const { boot, harness } = require('./helpers/app');
 const { DAY } = require('./helpers/stubs');
 
@@ -48,15 +48,17 @@ const MIN = 60_000;
         assert.strictEqual(t.outboxEvents('vip.membership.changed').filter((x) => x.payload.member.id === m.subject).length, 1);
     });
 
-    test('deliveries must be signed; only Billing is believed', async () => {
+    test('deliveries must be signed (v2, inside the replay window); only Billing is believed', async () => {
         const m = t.network.newUser('m3');
         const ent = t.billing.pay(m.subject, creator.subject).events[1];
         assert.strictEqual((await t.deliver(ent, { secret: 'x'.repeat(48) })).status, 401);
+        assert.strictEqual((await t.deliver(ent, { v1Only: true })).status, 401, 'v1 only (no v2 header): refused');
+        assert.strictEqual((await t.deliver(ent, { now: Date.now() - 301000 })).status, 401, 'stale v2 (outside the 300 s window): refused');
         const forged = { ...ent, event_id: t.billing.envelope('x.y.z', { type: 'x', id: '1' }, {}).event_id, source: 'live' };
         assert.strictEqual((await t.deliver(forged)).json.outcome, 'ignored:source');
         assert.strictEqual(t.domain.entitlements.getRow(m.subject, creator.subject), null);
         const raw = JSON.stringify({ event: ent, seq: 1 });
-        const res = await fetch(`${t.base}/internal/events`, { method: 'POST', body: raw, headers: { 'X-OpenVibe-Signature': signDelivery(raw + ' ', t.EVENTS_SECRET) } });
+        const res = await fetch(`${t.base}/internal/events`, { method: 'POST', body: raw, headers: signDeliveryHeaders(raw + ' ', t.EVENTS_SECRET) });
         assert.strictEqual(res.status, 401);
     });
 
