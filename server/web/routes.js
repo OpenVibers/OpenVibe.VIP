@@ -14,6 +14,7 @@
  * domain calls as the API and redirects back with a notice (?ok= / ?error=).
  */
 const crypto = require('crypto');
+const ovServe = require('openvibe-shared/serve');
 const frame = require('openvibe-shared/frame');
 const express = require('express');
 const { VipError, bool } = require('../util');
@@ -79,7 +80,7 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
     });
 
     // What shipped on OpenVibe.VIP: the shared update log every OpenVibe site has.
-    router.get('/updates', (req, res) => send(res, 200, { viewer: req.viewer, canonicalPath: '/updates', title: 'What shipped on OpenVibe.VIP', body: frame.updatesBody({ service: 'vip', siteName: 'OpenVibe.VIP' }) + frame.shippedScript() }));
+    router.get('/updates', (req, res) => send(res, 200, { viewer: req.viewer, canonicalPath: '/updates', title: 'What shipped on OpenVibe.VIP', body: frame.updatesBody({ service: 'vip', siteName: 'OpenVibe.VIP' }) + `<script src="${ovServe.url('shipped.js')}" defer></script>` }));
     router.get('/', (req, res) => send(res, 200, {
         active: 'home', viewer: req.viewer, canonicalPath: '/',
         body: pages.home({ creators: creators.listPublic().map(creators.present) }),

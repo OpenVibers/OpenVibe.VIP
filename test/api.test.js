@@ -166,7 +166,7 @@ const { test, run } = harness('api');
         assert.match(p.text, /\$4\.99<\/b> every 30 days/);
         assert.match(p.text, /Sign in to join/);
         assert.match(p.text, /<link rel="canonical" href="http:\/\/vip\.test\/lena">/);
-        assert.match(p.text, /openvibe\.network\/shared\/navbar\.js/);
+        assert.match(p.text, /\/shared\/navbar\.js\?v=[0-9a-f]{12}/);
         assert.match(p.text, /<noscript>/);
         assert.doesNotMatch(p.text, /\bfree\b|\$0|no ads/i);
         const hist = await t.page(`/lena/plans/${plan.slug}`);
