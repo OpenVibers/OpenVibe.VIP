@@ -3,7 +3,7 @@
   "stage": "alpha",
   "code": true,
   "deployed": true,
-  "deployment": "Deployed internally, not launched: openvibe-ovh /opt/openvibe.vip (release dc98781), unit openvibe-vip, 127.0.0.1:4620 loopback only; https://openvibe.vip still serves the OpenVibe.Sites placeholder. Principal vip; three Events subscriptions for Billing's events; checkout closed (VIP_CHECKOUT_PROVIDERS empty). Production holds 1 creator (network) and 0 plans, perks or memberships. Pins openvibe-contracts v0.19.0, openvibe-sdk v0.4.0, openvibe-shared v1.3.0.",
+  "deployment": "Deployed internally, not launched: openvibe-ovh /opt/openvibe.vip (release a675577, openvibe-contracts 0.33.0, openvibe-sdk 0.5.0, openvibe-shared 1.5.1), unit openvibe-vip, 127.0.0.1:4620 loopback only; https://openvibe.vip still serves the OpenVibe.Sites placeholder. Principal vip; three Events subscriptions for Billing's events (secret rotated 2026-09-24); checkout closed (VIP_CHECKOUT_PROVIDERS empty). Production holds the Live import: 44 creators, 43 plans (one per creator), 0 memberships while Billing runs in shadow.",
   "plan": "OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026)",
   "roadmap": "Wave 10",
   "works": [
@@ -17,14 +17,15 @@
     "import of Live's subscription offering, memberships from Billing entitlements",
     "14 vip.* capabilities, the service manifest and its events registered in openvibe-contracts v0.19.0",
     "deployed on the host (loopback only) with truthful /api/ready and /metrics; restore drill passed on the host 2026-09-23 05:23 UTC",
-    "reusable membership card (GET /embed/:username/card.json, GET /api/v1/creators/:ref/card), badge (/embed/:username/badge.svg) and embeddable widget (/embed/:username/widget): public data only, no cookies, the widget's CSP frame-ancestors configurable (VIP_WIDGET_FRAME_ANCESTORS), member count from Billing that the creator can hide (not deployed yet)"
+    "reusable membership card (GET /embed/:username/card.json, GET /api/v1/creators/:ref/card), badge (/embed/:username/badge.svg) and embeddable widget (/embed/:username/widget): public data only, no cookies, the widget's CSP frame-ancestors configurable (VIP_WIDGET_FRAME_ANCESTORS), member count from Billing that the creator can hide (not deployed yet)",
+    "the Live subscription import has run: 43 plans and plan versions, 44 creators, 87 migration maps (production, 2026-09-23)",
+    "Chat (subscriber badge, vip.entitlement.check), Community (members-only spaces and threads) and Blog (members-only posts) call VIP in production (vip.resource.policy.evaluate grants for Community and Blog)"
   ],
   "not_yet": [
     "not launched: openvibe.vip is still an OpenVibe.Sites placeholder and the service answers on loopback only",
     "checkout is closed until the Billing cutover (Billing runs in shadow; the owner must re-point the PowerChat webhook first); no billing.* event has reached VIP",
-    "the Live subscription import (scripts/import-live.js) has not been run (vip_migration_maps 0)",
-    "Chat, Community and Blog call VIP in code only: not deployed, and the Network has no vip.* grants for them yet; Live and Wiki do not call VIP",
-    "Billing sells one channel subscription per member and creator: one purchasable plan per creator, no tiers, no network membership product"
+    "Billing sells one channel subscription per member and creator: one purchasable plan per creator, no tiers, no network membership product",
+    "revocations reach Chat and Community through vip.membership.changed subscriptions (2026-09-24); Blog and Live still converge by the cache TTL (30-60 s)"
   ],
-  "updated": "2026-09-23"
+  "updated": "2026-09-24"
 }
