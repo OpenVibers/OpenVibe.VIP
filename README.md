@@ -149,7 +149,7 @@ Service tokens: Network client-credentials, audience `openvibe.vip`, one capabil
 `vip.*` ids are released in openvibe-contracts v0.19.0; the drafts stay in
 [docs/capabilities-proposal/](docs/capabilities-proposal/); grants are matched with contracts'
 `capabilities.grants()` — exact id or a `.*` family). User tokens: a Network user JWT; people act on their own things (their plans,
-perks, rules, members; their own memberships and checks); staff roles (`VIP_STAFF_ROLES`) manage
+perks, rules, members; their own memberships and checks); staff holding `staff.site.configure` (the contracts staff map) manage
 network plans. Errors are RFC 9457 problem+json. Creators are named by SubjectRef, `usr_` id, VIP
 handle or `network`.
 

@@ -11,7 +11,7 @@
  *   { kind: 'user', subject: 'usr_…', username, name, avatar, role }
  *       A browser's Network user JWT, presented as `Authorization: Bearer`. Users act only on their
  *       own things (their plans, perks, rules and members as a creator; their own memberships and
- *       entitlement checks as a member). Staff roles (VIP_STAFF_ROLES) manage network plans. The API never
+ *       entitlement checks as a member). Staff (staff.site.configure) manage network plans. The API never
  *       reads cookies, so a cross-site form cannot drive it; the SSR pages carry their own
  *       anti-forgery tokens.
  *   { kind: 'anonymous' }
@@ -19,7 +19,7 @@
  * A request that presents a token is judged on that token alone: a bad one is refused, never
  * downgraded to anonymous.
  */
-const { serviceAuth, capabilities, http, ids } = require('openvibe-contracts');
+const { serviceAuth, capabilities, http, ids, staff: staffMap } = require('openvibe-contracts');
 
 const PRINCIPAL_SUB = /^(svc|app|mod):/;
 const ANON = Object.freeze({ kind: 'anonymous' });
@@ -38,6 +38,8 @@ function userPrincipal(claims) {
     return {
         kind: 'user', subject, username: claims.username || null, name: claims.display_name || claims.username || null,
         avatar: claims.avatar_url || null, role: claims.role || 'user',
+        // Staff (network plans, any creator's plans) = the contracts staff map's staff.site.configure (ADR-022).
+        staff: staffMap.can(claims, 'staff.site.configure'),
     };
 }
 
@@ -69,7 +71,7 @@ function createApiAuth({ config, keys, userAuth }) {
     }
 
     const granted = (p, cap) => p.kind === 'service' && capabilities.grants(p.cap, cap);
-    const isStaff = (p) => p.kind === 'user' && (config.staffRoles || []).includes(p.role);
+    const isStaff = (p) => p.kind === 'user' && p.staff === true;
 
     return { middleware, resolve, granted, isStaff };
 }

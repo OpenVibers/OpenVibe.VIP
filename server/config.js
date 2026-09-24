@@ -49,8 +49,6 @@ function loadConfig(env = process.env) {
         cookies: { secure: env.COOKIE_SECURE != null ? bool(env.COOKIE_SECURE) : isProduction },
         // Signs the anti-forgery tokens of the server-rendered forms (required in production).
         formSecret: env.VIP_FORM_SECRET || (isProduction ? '' : 'dev-form-secret'),
-        // Network roles that may manage network-wide plans and see any creator's members.
-        staffRoles: list(env.VIP_STAFF_ROLES || 'admin'),
 
         billing: {
             url: trim(env.BILLING_URL || 'http://127.0.0.1:4600'),

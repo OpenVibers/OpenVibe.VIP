@@ -28,7 +28,7 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
     const router = express.Router();
     const { creators, plans, perks, memberships, entitlements, policies, checkout, billing } = domain;
     const forms = createForms({ secret: config.formSecret, now: domain.now });
-    const isStaff = (v) => !!v && (config.staffRoles || []).includes(v.role);
+    const isStaff = (v) => !!v && v.staff === true;
     router.use(viewerMiddleware(userAuth));
     const body = express.urlencoded({ extended: false, limit: '32kb' });
 
