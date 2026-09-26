@@ -72,9 +72,10 @@ function createApp(opts = {}) {
     app.use((req, res, next) => {
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+        // connect-src events.openvibe.network: release notifications (release-watch's EventSource, openvibe-shared 1.17).
         res.setHeader('Content-Security-Policy', [
             "default-src 'self'", "script-src 'self' 'unsafe-inline' https://openvibe.network", "style-src 'self' 'unsafe-inline' https://openvibe.network",
-            "img-src 'self' data: https:", "connect-src 'self' https://openvibe.network", "frame-src 'self' https://openvibe.network",
+            "img-src 'self' data: https:", "connect-src 'self' https://openvibe.network https://events.openvibe.network", "frame-src 'self' https://openvibe.network",
             "frame-ancestors 'self'", "object-src 'none'", "base-uri 'self'", "form-action 'self' https://openvibe.network https:",
         ].join('; '));
         next();
