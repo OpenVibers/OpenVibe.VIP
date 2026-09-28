@@ -61,7 +61,7 @@ home that is not a cache.
   resolve (importer only).
 - **OpenVibe.Events** — delivery of Billing's events to `/internal/events`; relay of VIP's outbox.
 - **openvibe-contracts** v0.49.0, **openvibe-sdk** v0.12.0 (outbox, inbox, delivery signatures, per-actor
-  limits), **openvibe-shared** v1.22.0 (chrome, legal pages, release manifest and update metrics, metrics,
+  limits), **openvibe-shared** v1.25.0 (chrome, legal pages, release manifest and update metrics, metrics,
   readiness).
 - Consumers, through the client below: Chat (the member badge), Community (members-only spaces and
   threads), Blog (members-only posts) and Wiki (VIP spaces and pages); Live is not wired yet.
