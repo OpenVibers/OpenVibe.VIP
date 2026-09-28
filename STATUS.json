@@ -3,7 +3,8 @@
   "stage": "alpha",
   "code": true,
   "deployed": true,
-  "deployment": "Deployed internally, not launched: openvibe-ovh /opt/openvibe.vip (release a675577, openvibe-contracts 0.33.0, openvibe-sdk 0.5.0, openvibe-shared 1.5.1), unit openvibe-vip, 127.0.0.1:4620 loopback only; https://openvibe.vip still serves the OpenVibe.Sites placeholder. Principal vip; three Events subscriptions for Billing's events (secret rotated 2026-09-24); checkout closed (VIP_CHECKOUT_PROVIDERS empty). Production holds the Live import: 44 creators, 43 plans (one per creator), 0 memberships while Billing runs in shadow.",
+  "deployment": "Deployed internally, not launched: deployed with `sudo ovhost deploy vip`, /opt/openvibe.vip, unit openvibe-vip, 127.0.0.1:4620 loopback only; https://openvibe.vip still serves the OpenVibe.Sites placeholder. Principal vip; three Events subscriptions for Billing's events (secret rotated 2026-09-24); checkout closed (VIP_CHECKOUT_PROVIDERS empty). On 2026-09-24 production held the Live import: 44 creators, 43 plans (one per creator), 0 memberships while Billing runs in shadow.",
+  "contracts": "openvibe-contracts v0.49.0",
   "plan": "OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026)",
   "roadmap": "Wave 10",
   "works": [
@@ -11,15 +12,16 @@
     "entitlement projection fed by Billing events (signed webhook + openvibe-sdk inbox) with valid_until, grace and a direct Billing fallback; 'unknown' never authorizes",
     "checkout hand-off and cancellation through OpenVibe.Billing; the membership is filed under the plan version chosen",
     "API /api/v1 for service and user tokens; consumer client openvibe-vip/client that fails closed, with createVipCache (the product cache and its convergence bound, test/convergence.test.js)",
-    "the product's default gate (evaluate fallback, honouring product bindings such as blog gated_post) and entitlements/check product perks (Chat's badge); Chat, Community and Blog consume them in code (not deployed, grants pending)",
+    "the product's default gate (evaluate fallback, honouring product bindings such as blog gated_post) and entitlements/check product perks (Chat's badge); Chat, Community, Blog and Wiki consume them in code",
     "server-rendered creator plan pages, terms history, member status and creator dashboard with the shared chrome",
     "outbox events vip.plan.published and vip.membership.changed (openvibe-sdk)",
     "import of Live's subscription offering, memberships from Billing entitlements",
-    "14 vip.* capabilities, the service manifest and its events registered in openvibe-contracts v0.19.0",
     "deployed on the host (loopback only) with truthful /api/ready and /metrics; restore drill passed on the host 2026-09-23 05:23 UTC",
     "reusable membership card (GET /embed/:username/card.json, GET /api/v1/creators/:ref/card), badge (/embed/:username/badge.svg) and embeddable widget (/embed/:username/widget): public data only, no cookies, the widget's CSP frame-ancestors configurable (VIP_WIDGET_FRAME_ANCESTORS), member count from Billing that the creator can hide (not deployed yet)",
     "the Live subscription import has run: 43 plans and plan versions, 44 creators, 87 migration maps (production, 2026-09-23)",
-    "Chat (subscriber badge, vip.entitlement.check), Community (members-only spaces and threads) and Blog (members-only posts) call VIP in production (vip.resource.policy.evaluate grants for Community and Blog)"
+    "Chat (subscriber badge, vip.entitlement.check), Community (members-only spaces and threads) and Blog (members-only posts) call VIP in production (vip.resource.policy.evaluate grants for Community and Blog)",
+    "14 vip.* capabilities, the service manifest and its events registered in openvibe-contracts v0.19.0 (this repository pins v0.49.0)",
+    "per-actor limits on /api/v1 (openvibe-sdk/limits)"
   ],
   "not_yet": [
     "not launched: openvibe.vip is still an OpenVibe.Sites placeholder and the service answers on loopback only",
@@ -27,5 +29,17 @@
     "Billing sells one channel subscription per member and creator: one purchasable plan per creator, no tiers, no network membership product",
     "revocations reach Chat and Community through vip.membership.changed subscriptions (2026-09-24); Blog and Live still converge by the cache TTL (30-60 s)"
   ],
-  "updated": "2026-09-24"
+  "updated": "2026-09-28",
+  "features": [
+    "plans with immutable versions, perks and product bindings",
+    "entitlement projection from Billing events with valid_until, grace and a Billing fallback; unknown never authorizes",
+    "checkout and cancel through OpenVibe.Billing",
+    "gated-resource policy evaluation for products (fails closed)",
+    "openvibe-vip/client with the product cache and its convergence bound",
+    "creator plan pages, terms history, member status and creator dashboard",
+    "public membership card, badge and embeddable widget",
+    "Live subscription import",
+    "SDK outbox events vip.plan.published and vip.membership.changed",
+    "per-actor limits (openvibe-sdk/limits)"
+  ]
 }

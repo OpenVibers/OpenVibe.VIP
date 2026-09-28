@@ -3,8 +3,8 @@
 > Memberships: plans, perks and benefits recognised across every OpenVibe site.
 
 **Status:** alpha — runtime built and tested (roadmap Wave 10). Deployed internally, **not launched**:
-it runs on the host since 2026-09-23 on `127.0.0.1:4620` only, with one creator (`network`) and no plans
-or memberships, and checkout closed. `openvibe.vip` keeps its
+it runs on the host since 2026-09-23 on `127.0.0.1:4620` only, holding the Live import (on 2026-09-24:
+44 creators, 43 plans, 0 memberships), with checkout closed. `openvibe.vip` keeps its
 [OpenVibe.Sites](https://github.com/OpenVibers/OpenVibe.Sites) placeholder until the launch rule
 below holds.  
 **Domain:** `openvibe.vip` (port 4620, service id `vip`)  
@@ -60,11 +60,26 @@ home that is not a cache.
 - **OpenVibe.Network** — RS256 service and user tokens (JWKS), OAuth sign-in for the pages, identity
   resolve (importer only).
 - **OpenVibe.Events** — delivery of Billing's events to `/internal/events`; relay of VIP's outbox.
-- **openvibe-contracts** v0.33.0, **openvibe-sdk** v0.5.0 (outbox, inbox, delivery signatures),
-  **openvibe-shared** v1.5.1 (chrome, legal pages, release manifest and update metrics, metrics, readiness).
+- **openvibe-contracts** v0.49.0, **openvibe-sdk** v0.12.0 (outbox, inbox, delivery signatures, per-actor
+  limits), **openvibe-shared** v1.22.0 (chrome, legal pages, release manifest and update metrics, metrics,
+  readiness).
 - Consumers, through the client below: Chat (the member badge), Community (members-only spaces and
-  threads) and Blog (members-only posts); Live and Wiki are not wired yet.
+  threads), Blog (members-only posts) and Wiki (VIP spaces and pages); Live is not wired yet.
 - **Not** OpenVibe.Live: VIP works with Live unavailable (nothing here calls Live).
+
+## Capabilities
+
+Implemented here (the service manifest's `capabilities`, 14 `vip.*` ids, audience `openvibe.vip`):
+`vip.plan.create|update|archive|list`, `vip.perk.create|update|list`, `vip.membership.checkout|status`,
+`vip.entitlement.check`, `vip.resource.policy.get|set|evaluate` and `vip.creator.members.list`.
+
+Called elsewhere, as the service principal `vip`:
+
+| Service | Grant | Why |
+|---|---|---|
+| OpenVibe.Billing | `billing.intent.create`, `billing.subscription.manage`, `billing.entitlement.check` | checkout, credit-paid periods and cancel, the authoritative check |
+| OpenVibe.Events | `events.event.publish`; `events.subscription.manage` once (`scripts/subscribe.js`) | the outbox relay; the three subscriptions for Billing's events |
+| OpenVibe.Network | `identity.subject.resolve` | the Live importer's creator mapping |
 
 ## Run it
 
@@ -323,6 +338,8 @@ final import), `scripts/subscribe.js`, then open checkout (`VIP_CHECKOUT_PROVIDE
 
 ## Security notes
 
+Reporting a vulnerability: [SECURITY.md](SECURITY.md).
+
 - Every API route checks one capability (services) or ownership (users); a presented token is judged
   on that token alone. The API never reads cookies.
 - Billing events: HMAC-SHA256 signature over the raw body (`VIP_EVENTS_SECRET`, rotation by list),
@@ -360,9 +377,22 @@ final import), `scripts/subscribe.js`, then open checkout (`VIP_CHECKOUT_PROVIDE
 | VIP works with Live unavailable | no code path calls Live; every test runs without a Live stub |
 | a creator's membership card, badge and widget are public-data only, the same for everyone, embeddable and inert | `test/embeds.test.js` (published plans only, no subjects or binding configs, no cookie read or set, CORS, SVG escaping and sandbox, the widget's frame-ancestors and hashed style, the creator's member-count switch, Billing outage keeps the last count or shows none) |
 
-Not yet demonstrated (needs the other services): convergence **across consuming products** (Live,
-Chat, Community do not call VIP yet), and a real Billing/Events round trip on the host (Billing is in
-shadow and has sent VIP no events). The Live import has not been run on production.
+Not yet demonstrated (needs the other services): convergence **across consuming products** end to end
+(Chat, Community, Blog and Wiki call VIP in code; Live does not), and a real Billing/Events round trip
+on the host (Billing is in shadow and has sent VIP no events). The Live import ran on production on
+2026-09-23.
+
+## Deploy
+
+Production deploys with `sudo ovhost deploy vip` on the host (strategy `git-checkout`: fetch,
+fast-forward `/opt/openvibe.vip`, install on a lockfile change, restart, wait for `/api/ready`).
+The unit is `openvibe-vip.service` on `127.0.0.1:4620`, the env file `/etc/openvibe/vip.env`. State lives in
+`/var/lib/openvibe-vip`. The vhost [deploy/nginx/openvibe.vip.conf](deploy/nginx/openvibe.vip.conf) waits
+for the launch: `openvibe.vip` serves the Sites placeholder.
+Rollback: ovhost puts the previous sha back by itself when `/api/ready` does not answer 2xx after the
+restart; afterwards `sudo ovhost rollback vip --to <sha>`. One blocker: `idx_vip_rules_resource` (one
+active rule per resource) was replaced by a per-creator unique index, and a release from before it
+recreates the narrower index, which fails at boot once two creators gate the same resource.
 
 ## Launch rule
 
