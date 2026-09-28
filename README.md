@@ -335,6 +335,16 @@ final import), `scripts/subscribe.js`, then open checkout (`VIP_CHECKOUT_PROVIDE
   allows only its own hashed style. `VIP_WIDGET_FRAME_ANCESTORS` is reduced to source expressions, so it
   cannot add a CSP directive. The badge SVG is served sandboxed, with every name escaped.
   `test/embeds.test.js` covers all of this.
+- Per-actor limits on `/api/v1` (`server/api/actor-limits.js`, openvibe-sdk/limits, roadmap WS-R task 4),
+  counted once the credential is checked and before any work: a service as its principal (`svc:chat`), a
+  person as `user:usr_…`, anyone else by address. Past a limit: `429` problem+json `rate_limited` with
+  `Retry-After`, one log line and `vip_rate_limited_total{limit,window}`. Reads take `VIP_LIMITS_MINUTE` /
+  `VIP_LIMITS_HOUR` (120 a minute, 3000 an hour). `GET|POST /entitlements/check` and
+  `POST /policies/evaluate` give a service 1200 / 30000 (products ask per member and resource behind
+  their cache; a refusal would lock members out) and a person the defaults. `POST /checkout`: a person
+  10 / 60, a service 60 / 1200; cancel 5 / 30. New plans and perks, publish and archive 10 / 100; plan,
+  perk and rule changes and preferences 30 / 300. Never limited: health, ready, `/release.json`,
+  `/metrics`, `/embed` and the signed Events deliveries at `/internal/events` (`test/actor-limits.test.js`).
 
 ## Acceptance (what the tests prove)
 

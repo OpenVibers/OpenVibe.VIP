@@ -28,6 +28,7 @@ const { consumerRouter } = require('./events/consumer');
 const { createDomain } = require('./domain');
 const { createApiAuth } = require('./api/auth');
 const { v1Router } = require('./api/v1');
+const { createActorLimits } = require('./api/actor-limits');
 const { createSessionRoutes } = require('./web/session');
 const { createWebRoutes } = require('./web/routes');
 const { createEmbedRoutes } = require('./web/embeds');
@@ -92,7 +93,10 @@ function createApp(opts = {}) {
 
     const consumer = consumerRouter({ domain, config, log });
     app.use('/internal', consumer.router);
-    app.use('/api/v1', express.json({ limit: '64kb' }), (req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); }, apiAuth.middleware, v1Router({ domain, apiAuth }));
+    // Per-actor limits on /api/v1 (api/actor-limits.js), counted once apiAuth resolved the caller.
+    // opts.limitsNow: the limiter's clock (tests).
+    const limits = createActorLimits({ config, now: opts.limitsNow || now, registry: metrics.registry, log });
+    app.use('/api/v1', express.json({ limit: '64kb' }), (req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); }, apiAuth.middleware, v1Router({ domain, apiAuth, limits }));
     app.use('/auth', createSessionRoutes(config, userAuth, { fetchImpl }));
     { const legal = require('openvibe-shared/legal'); app.get(legal.PATHS, legal.handler({ id: 'vip', service: 'vip', host: 'openvibe.vip', name: 'OpenVibe.VIP', profile: 'ugc' })); }
 

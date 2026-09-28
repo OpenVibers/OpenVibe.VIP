@@ -29,9 +29,17 @@ const CAP = {
     members: 'vip.creator.members.list',
 };
 
-function v1Router({ domain, apiAuth }) {
+function v1Router({ domain, apiAuth, limits }) {
     const r = express.Router();
     const { creators, plans, perks, memberships, entitlements, policies, checkout, billing } = domain;
+
+    // Per-actor limits (api/actor-limits.js), after the credential and before any work: reads take the
+    // defaults, except the entitlement check, which sets its own below.
+    r.use(limits.reads('vip.read', (req) => req.path === '/entitlements/check'));
+    const create = limits('vip.catalog.create', { minute: 10, hour: 100 });   // new plans and perks, publish, archive
+    const edit = limits('vip.catalog.update', { minute: 30, hour: 300 });     // plan, perk and rule changes, preferences
+    /** Services and people meet different numbers on one route: `service` for a principal, `person` otherwise. */
+    const byKind = (service, person) => (req, res, next) => (req.principal.kind === 'service' ? service : person)(req, res, next);
     const granted = apiAuth.granted;
     const isStaff = apiAuth.isStaff;
 
@@ -136,7 +144,7 @@ function v1Router({ domain, apiAuth }) {
         const all = plans.versions(plan.id).filter((v) => own || v.published_at).map(plans.presentVersion);
         res.json({ plan_id: plan.id, versions: all });
     }));
-    r.post('/plans', wrap((req, res) => {
+    r.post('/plans', create, wrap((req, res) => {
         const b = req.body || {};
         const c = actingCreator(req, b.creator, CAP.planCreate);
         const actor = req.principal.kind === 'service' ? req.principal.sub : req.principal.subject;
@@ -152,19 +160,19 @@ function v1Router({ domain, apiAuth }) {
         requireManage(req, creators.byId(plan.creator_id), cap);
         return plan;
     };
-    r.patch('/plans/:id', wrap((req, res) => {
+    r.patch('/plans/:id', edit, wrap((req, res) => {
         const plan = managedPlan(req, CAP.planUpdate);
         const b = req.body || {};
         const actor = req.principal.kind === 'service' ? req.principal.sub : req.principal.subject;
         const out = plans.update(plan.id, { name: b.name, description: b.description, benefits: b.benefits, perks: b.perks, changeNote: b.change_note, actor, traceparent: trace(req) });
         res.json({ plan: presentPlanFull(out.plan), version: plans.presentVersion(out.version), unchanged: out.unchanged });
     }));
-    r.post('/plans/:id/publish', wrap((req, res) => {
+    r.post('/plans/:id/publish', create, wrap((req, res) => {
         const plan = managedPlan(req, CAP.planUpdate);
         const out = plans.publish(plan.id, { traceparent: trace(req) });
         res.json({ plan: presentPlanFull(out.plan), replay: out.replay });
     }));
-    r.post('/plans/:id/archive', wrap((req, res) => {
+    r.post('/plans/:id/archive', create, wrap((req, res) => {
         const plan = managedPlan(req, CAP.planArchive);
         res.json({ plan: presentPlanFull(plans.archive(plan.id)) });
     }));
@@ -177,14 +185,14 @@ function v1Router({ domain, apiAuth }) {
         const list = perks.list({ creatorId: c.id, includeNetwork: bool(req.query.network, true), includeRetired: own && bool(req.query.retired) });
         res.json({ perks: list.map((p) => perks.present(p)) });
     }));
-    r.post('/perks', wrap((req, res) => {
+    r.post('/perks', create, wrap((req, res) => {
         const b = req.body || {};
         const c = actingCreator(req, b.creator, CAP.perkCreate);
         const actor = req.principal.kind === 'service' ? req.principal.sub : req.principal.subject;
         const p = perks.create({ creatorId: c.id, key: b.key, name: b.name, description: b.description, kind: b.kind, bindings: b.bindings, actor });
         res.status(201).json({ perk: perks.present(p) });
     }));
-    r.patch('/perks/:id', wrap((req, res) => {
+    r.patch('/perks/:id', edit, wrap((req, res) => {
         const p = perks.byId(req.params.id);
         if (!p) fail(404, 'vip.perk_not_found', `no perk ${req.params.id}`);
         requireManage(req, creators.byId(p.creator_id), CAP.perkUpdate);
@@ -207,7 +215,9 @@ function v1Router({ domain, apiAuth }) {
         if (!u || !ownOrigin || u.origin !== ownOrigin) fail(422, 'vip.invalid_input', `${field} must be a page of ${ownOrigin || 'this site'}`);
         return u.toString();
     }
-    r.post('/checkout', wrap(async (req, res) => {
+    // A checkout asks Billing for a payment intent: a person starts at most 10 a minute and 60 an hour;
+    // a service starting them for its members gets one a second (60 and 1200).
+    r.post('/checkout', byKind(limits('vip.checkout', { minute: 60, hour: 1200 }), limits('vip.checkout', { minute: 10, hour: 60 })), wrap(async (req, res) => {
         const b = req.body || {};
         const member = memberSubject(req, b.subject, CAP.checkout);
         const out = await checkout.start({
@@ -235,12 +245,13 @@ function v1Router({ domain, apiAuth }) {
         if (!c || !c.subject) fail(404, 'vip.creator_not_found', 'no such creator');
         return c;
     };
-    r.post('/memberships/:creator/cancel', wrap(async (req, res) => {
+    // Cancelling is handed to Billing: the member does it once.
+    r.post('/memberships/:creator/cancel', limits('vip.membership.cancel', { minute: 5, hour: 30 }), wrap(async (req, res) => {
         if (req.principal.kind !== 'user') fail(403, 'vip.member_only', 'only the member can cancel their membership');
         const c = creatorParam(req);
         res.json(await checkout.cancel({ member: req.principal.subject, creatorId: c.id, traceparent: trace(req) }));
     }));
-    r.put('/memberships/:creator/preferences', wrap((req, res) => {
+    r.put('/memberships/:creator/preferences', edit, wrap((req, res) => {
         if (req.principal.kind !== 'user') fail(403, 'vip.member_only', 'only the member sets their preferences');
         const c = creatorParam(req);
         const b = req.body || {};
@@ -273,8 +284,13 @@ function v1Router({ domain, apiAuth }) {
         }
         res.json(out);
     });
-    r.get('/entitlements/check', entitlementCheck);
-    r.post('/entitlements/check', entitlementCheck);
+    // Products (Chat badges, Community and Blog gates) ask once per member and resource behind a 30 to
+    // 60 s cache, so one service asks about many people: 1200 a minute only stops a runaway loop, and a
+    // refusal there would lock members out. A person asking about themselves takes the defaults.
+    const hot = limits('vip.entitlement.check', { minute: 1200, hour: 30000 });
+    const entitlementLimit = byKind(hot, limits('vip.entitlement.check'));
+    r.get('/entitlements/check', entitlementLimit, entitlementCheck);
+    r.post('/entitlements/check', entitlementLimit, entitlementCheck);
 
     // ── Gated-resource policy ────────────────────────────────
     r.get('/policies', wrap((req, res) => {
@@ -302,7 +318,7 @@ function v1Router({ domain, apiAuth }) {
         requireManage(req, creators.byId(rule.creator_id), CAP.policyGet);
         res.json({ rule: policies.present(rule) });
     }));
-    r.post('/policies', wrap((req, res) => {
+    r.post('/policies', edit, wrap((req, res) => {
         const b = req.body || {};
         const c = actingCreator(req, b.creator, CAP.policySet);
         if (c.kind !== 'creator') fail(422, 'vip.invalid_input', 'gated resources belong to a creator');
@@ -310,13 +326,14 @@ function v1Router({ domain, apiAuth }) {
         const rule = policies.set({ creatorId: c.id, resource: b.resource, requirement: b.requirement, planId: b.plan_id, perkKey: b.perk_key, sensitive: bool(b.sensitive), actor });
         res.status(201).json({ rule: policies.present(rule) });
     }));
-    r.delete('/policies/:id', wrap((req, res) => {
+    r.delete('/policies/:id', edit, wrap((req, res) => {
         const rule = policies.byId(req.params.id);
         if (!rule) fail(404, 'vip.rule_not_found', `no rule ${req.params.id}`);
         requireManage(req, creators.byId(rule.creator_id), CAP.policySet);
         res.json({ rule: policies.present(policies.disable(rule.id)) });
     }));
-    r.post('/policies/evaluate', wrap(async (req, res) => {
+    // Evaluation is the gates' hot path too (see the entitlement check).
+    r.post('/policies/evaluate', byKind(limits('vip.resource.policy.evaluate', { minute: 1200, hour: 30000 }), limits('vip.resource.policy.evaluate')), wrap(async (req, res) => {
         const b = req.body || {};
         const p = req.principal;
         needAuth(p);

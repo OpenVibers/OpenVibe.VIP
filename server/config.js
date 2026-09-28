@@ -96,6 +96,13 @@ function loadConfig(env = process.env) {
             frameAncestors: String(env.VIP_WIDGET_FRAME_ANCESTORS || '*').replace(/[;,\r\n]+/g, ' ').replace(/\s+/g, ' ').trim() || '*',
             memberCountTtlMs: int(env.VIP_MEMBER_COUNT_TTL_MS, 5 * 60 * 1000),
         },
+
+        // Per-actor limits on /api/v1 (server/api/actor-limits.js, roadmap WS-R task 4): the reads one
+        // caller may make per minute and per hour. Checks, checkout and catalog changes set theirs in api/v1.js.
+        actorLimits: {
+            minute: Math.max(1, int(env.VIP_LIMITS_MINUTE, 120)),
+            hour: Math.max(1, int(env.VIP_LIMITS_HOUR, 3000)),
+        },
     };
 }
 
