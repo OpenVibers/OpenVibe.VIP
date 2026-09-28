@@ -2,7 +2,7 @@
   "name": "openvibe-vip",
   "version": "0.1.0",
   "private": true,
-  "description": "OpenVibe.VIP — memberships on the OpenVibe network: plans, versioned plan terms, perks and gated-resource policy. Billing holds the entitlement truth; VIP holds plans and perks.",
+  "description": "OpenVibe.VIP \u2014 memberships on the OpenVibe network: plans, versioned plan terms, perks and gated-resource policy. Billing holds the entitlement truth; VIP holds plans and perks.",
   "main": "server/index.js",
   "exports": {
     ".": "./server/index.js",
@@ -14,9 +14,15 @@
     "dev": "NODE_ENV=development node server/index.js",
     "test": "node test/run.js",
     "subscribe": "node scripts/subscribe.js",
-    "import-live": "node scripts/import-live.js"
+    "import-live": "node scripts/import-live.js",
+    "test:pg": "VIP_TEST_STORE=pg node test/run.js"
   },
-  "keywords": ["openvibe", "vip", "memberships", "entitlements"],
+  "keywords": [
+    "openvibe",
+    "vip",
+    "memberships",
+    "entitlements"
+  ],
   "author": "OpenVibers",
   "license": "AGPL-3.0-only",
   "repository": "github:OpenVibers/OpenVibe.VIP",
@@ -25,12 +31,17 @@
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "iovalkey": "^0.4.0",
     "jsonwebtoken": "^9.0.2",
-    "openvibe-contracts": "https://codeload.github.com/OpenVibers/OpenVibe.Contracts/tar.gz/refs/tags/v0.49.0",
-    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.12.0",
-    "openvibe-shared": "https://codeload.github.com/OpenVibers/OpenVibe.Shared/tar.gz/refs/tags/v1.25.0"
+    "openvibe-contracts": "https://codeload.github.com/OpenVibers/OpenVibe.Contracts/tar.gz/refs/tags/v0.76.0",
+    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.20.1",
+    "openvibe-shared": "https://codeload.github.com/OpenVibers/OpenVibe.Shared/tar.gz/refs/tags/v1.27.0",
+    "pg": "^8.23.0"
   },
   "engines": {
     "node": ">=22.0.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8"
   }
 }

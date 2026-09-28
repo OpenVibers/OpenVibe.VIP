@@ -17,7 +17,7 @@
 const { validate } = require('openvibe-contracts');
 const { createClient } = require('openvibe-sdk/core');
 const { createServiceTokenClient } = require('openvibe-sdk/auth');
-const { createEventsClient, createOutbox } = require('openvibe-sdk/events');
+const { createEventsClient, createPgOutbox } = require('openvibe-sdk/events');
 
 const ACTOR = { type: 'service', id: 'vip' };
 
@@ -35,7 +35,9 @@ function createVipOutbox({ db, config, fetchImpl, now = () => Date.now(), log = 
     }
     const events = createEventsClient(createClient(clientOpts), { source: 'vip' });
     let lastError = null;
-    const outbox = createOutbox(db, {
+    // The PostgreSQL outbox: rows are written in the change's own transaction (enqueue(db, …) joins the ambient
+    // transaction); several processes relay one table safely (leases).
+    const outbox = createPgOutbox(db, {
         events,
         intervalMs: config.events.intervalMs,
         now,
@@ -45,14 +47,13 @@ function createVipOutbox({ db, config, fetchImpl, now = () => Date.now(), log = 
             lastError = msg;
         },
     });
-    outbox.ensureSchema();
 
     /** Inside the caller's transaction. */
     function emit(eventType, subject, payload, { visibility = 'internal', priority = 'important', traceparent } = {}) {
         const env = events.prepare({ event_type: eventType, actor: ACTOR, subject, payload, visibility, priority }, { now: now() });
         const v = validate('events.event-envelope@1', env);
         if (!v.valid) throw new Error(`outbox: invalid envelope for ${eventType}: ${v.errors.map((e) => `${e.path} ${e.message}`).join('; ')}`);
-        return outbox.enqueue(env, { traceparent });
+        return outbox.enqueue(db, env, { traceparent });
     }
 
     return {

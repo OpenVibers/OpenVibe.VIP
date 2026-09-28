@@ -49,7 +49,9 @@ async function boot(opts = {}) {
     const config = loadConfig(env);
     const logs = [];
     const log = { log: (...a) => logs.push(a.join(' ')), warn: (...a) => logs.push(a.join(' ')), error: (...a) => logs.push(a.join(' ')), debug() {} };
-    const app = createApp({ config, now: clock.now, log });
+    // One database per boot (PGlite, or VIP_TEST_STORE=pg: the containers), dropped when the boot closes.
+    const testdb = opts.testdb || await require('./db').testDb();
+    const app = await createApp({ config, db: testdb.db, now: clock.now, log });
     const server = await new Promise((resolve) => { const s = http.createServer(app); s.listen(0, '127.0.0.1', () => resolve(s)); });
     const base = `http://127.0.0.1:${server.address().port}`;
     const domain = app.locals.domain;
@@ -87,18 +89,18 @@ async function boot(opts = {}) {
     }
     const csrf = (html) => { const m = /name="_csrf" value="([^"]+)"/.exec(html); return m ? m[1] : null; };
 
-    const outboxEvents = (type) => domain.db.prepare('SELECT envelope FROM event_outbox ORDER BY id').all().map((r) => JSON.parse(r.envelope)).filter((e) => !type || e.event_type === type);
+    const outboxEvents = async (type) => (await domain.db.prepare('SELECT envelope FROM event_outbox ORDER BY id').all()).map((r) => (typeof r.envelope === 'string' ? JSON.parse(r.envelope) : r.envelope)).filter((e) => !type || e.event_type === type);
 
     async function close() {
         await new Promise((r) => server.close(r));
         app.locals.outbox.stop();
         await billing.close();
         await network.close();
-        try { domain.db.close(); } catch { /* */ }
+        if (!opts.testdb) await testdb.close();   // a caller that handed its own database closes it
         fs.rmSync(dir, { recursive: true, force: true });
     }
 
-    return { app, base, config, domain, network, billing, clock, logs, call, deliver, deliverAll, page, csrf, outboxEvents, close, EVENTS_SECRET };
+    return { app, base, config, domain, network, billing, clock, logs, call, deliver, deliverAll, page, csrf, outboxEvents, close, testdb, EVENTS_SECRET };
 }
 
 /** Tiny test harness: sequential async tests, a summary, exit code. */

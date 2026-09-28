@@ -19,7 +19,7 @@ function createDomain({ db, config, outbox, billing, now = () => Date.now(), log
     const policies = createPolicies({ db, now, creators, plans, perks, memberships, entitlements });
     const checkout = createCheckout({ db, now, config, billing, creators, plans, entitlements });
     const cards = createCards({ db, config, creators, plans, perks, billing, now, log });
-    const tx = (fn) => db.transaction(fn)();
+    const tx = async (fn) => await db.tx(fn);
     return { db, config, now, tx, outbox, billing, creators, perks, plans, memberships, entitlements, policies, checkout, cards };
 }
 

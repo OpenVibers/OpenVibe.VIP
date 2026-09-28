@@ -70,9 +70,9 @@ const { test, run } = harness('api');
     test('when Billing settles the handed-off checkout, the membership is filed under the version chosen then', async () => {
         await t.call('PATCH', `/api/v1/plans/${plan.id}`, { user: creator, body: { benefits: ['Badge in chat', 'Monthly stream'] } });   // v2 published meanwhile
         await t.deliverAll(t.billing.pay(buyer.subject, creator.subject, { provider: 'stripe' }).events);
-        const m = t.domain.memberships.get(buyer.subject, t.domain.creators.bySubject(creator.subject).id);
+        const m = await t.domain.memberships.get(buyer.subject, (await t.domain.creators.bySubject(creator.subject)).id);
         assert.strictEqual(m.origin, 'checkout');
-        assert.strictEqual(t.domain.plans.version(m.plan_version_id).version, 1);
+        assert.strictEqual((await t.domain.plans.version(m.plan_version_id)).version, 1);
         const again = await t.call('POST', '/api/v1/checkout', { user: buyer, body: { plan_id: plan.id, provider: 'stripe' } });
         assert.strictEqual(again.status, 409);
         assert.strictEqual(again.json.code, 'vip.already_member');
@@ -90,10 +90,10 @@ const { test, run } = harness('api');
         assert.strictEqual(e.json.status, 'active');
         assert.strictEqual(e.json.membership.plan_version.version, 2);
         // Billing's own event for the same grant arrives later and changes nothing.
-        const before = t.outboxEvents('vip.membership.changed').filter((x) => x.payload.member.id === payer.subject).length;
+        const before = (await t.outboxEvents('vip.membership.changed')).filter((x) => x.payload.member.id === payer.subject).length;
         const out = await t.deliverAll(t.billing.state.lastEvents);
         assert.ok(['unchanged', 'stale_ignored'].includes(out[1].json.outcome), out[1].json.outcome);
-        assert.strictEqual(t.outboxEvents('vip.membership.changed').filter((x) => x.payload.member.id === payer.subject).length, before);
+        assert.strictEqual((await t.outboxEvents('vip.membership.changed')).filter((x) => x.payload.member.id === payer.subject).length, before);
         assert.strictEqual(before, 1);
     });
 
@@ -116,7 +116,7 @@ const { test, run } = harness('api');
     });
 
     test('cancel goes through Billing (member only) and keeps the paid period', async () => {
-        const cid = t.domain.creators.bySubject(creator.subject).id;
+        const cid = (await t.domain.creators.bySubject(creator.subject)).id;
         const svc = await t.call('POST', `/api/v1/memberships/${creator.subject}/cancel`, { cap: ['vip.membership.checkout'] });
         assert.strictEqual(svc.status, 403);
         const r = await t.call('POST', `/api/v1/memberships/${creator.subject}/cancel`, { user: buyer });
@@ -213,7 +213,7 @@ const { test, run } = harness('api');
         const other = t.network.newUser('tess', { role: 'streamer' });
         const steal = await t.page(`/dashboard/plans/${plan.id}`, { user: other, method: 'POST', form: { _csrf: t.csrf((await t.page('/dashboard', { user: other })).text), name: 'mine now' } });
         assert.match(steal.location, /error=/);
-        assert.strictEqual(t.domain.plans.latestVersion(plan.id).version, 3);
+        assert.strictEqual((await t.domain.plans.latestVersion(plan.id)).version, 3);
         const net = await t.page('/dashboard?as=network', { user: creator });
         assert.strictEqual(net.status, 403);
         const anon = await t.page('/dashboard');
@@ -243,5 +243,5 @@ const { test, run } = harness('api');
         } finally { await t2.close(); }
     });
 
-    await run().finally(() => t.close());
+    await run().finally(async () => await t.close());
 })();

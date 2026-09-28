@@ -29,13 +29,13 @@ function billingProblem(err) {
 }
 
 function createCheckout({ db, now, config, billing, creators, plans, entitlements }) {
-    const byId = (id) => db.prepare('SELECT * FROM vip_checkouts WHERE id = ?').get(id) || null;
+    const byId = async (id) => await db.prepare('SELECT * FROM vip_checkouts WHERE id = ?').get(id) || null;
 
     async function start({ member, planId, provider, successUrl, cancelUrl, autoRenew = true, traceparent }) {
-        const plan = plans.byId(String(planId || ''));
+        const plan = await plans.byId(String(planId || ''));
         if (!plan || plan.status !== 'published') fail(404, 'vip.plan_not_found', 'no published plan with that id');
         if (!plan.billing_kind) fail(409, 'vip.checkout.unavailable', 'this plan is not sold through Billing yet');
-        const creator = creators.byId(plan.creator_id);
+        const creator = await creators.byId(plan.creator_id);
         if (!creator || creator.status !== 'active' || !creator.subject) fail(409, 'vip.checkout.unavailable', 'this creator is not taking new members');
         if (creator.subject === member) fail(422, 'vip.checkout.self', 'you cannot join your own plan');
         const p = String(provider || '').toLowerCase();
@@ -50,27 +50,27 @@ function createCheckout({ db, now, config, billing, creators, plans, entitlement
 
         const at = iso(now());
         const id = prefixedId('vco', now());
-        db.prepare(`INSERT INTO vip_checkouts (id, member_subject, creator_id, plan_id, plan_version_id, provider, status, created_at, updated_at)
+        await db.prepare(`INSERT INTO vip_checkouts (id, member_subject, creator_id, plan_id, plan_version_id, provider, status, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, 'created', ?, ?)`).run(id, member, creator.id, plan.id, plan.current_version_id, p, at, at);
-        const mark = (fields) => {
+        const mark = async (fields) => {
             const cols = Object.keys(fields);
-            db.prepare(`UPDATE vip_checkouts SET ${cols.map((c) => `${c} = @${c}`).join(', ')}, updated_at = @updated_at WHERE id = @id`).run({ ...fields, updated_at: iso(now()), id });
+            await db.prepare(`UPDATE vip_checkouts SET ${cols.map((c) => `${c} = @${c}`).join(', ')}, updated_at = @updated_at WHERE id = @id`).run({ ...fields, updated_at: iso(now()), id });
         };
 
         if (p === 'credit') {
             let out;
             try {
                 out = await billing.subscribeWithCredit({ subscriber: member, creator: creator.subject, autoRenew, key: `vip:checkout:${id}`, traceparent });
-            } catch (e) { mark({ status: 'failed', error: String(e.code || e.message).slice(0, 200) }); billingProblem(e); }
+            } catch (e) { await mark({ status: 'failed', error: String(e.code || e.message).slice(0, 200) }); billingProblem(e); }
             const sub = out.subscription || {};
             const ent = out.entitlement || {};
-            mark({ status: 'paid', billing_subscription_id: sub.id || null });
-            entitlements.apply({
+            await mark({ status: 'paid', billing_subscription_id: sub.id || null });
+            await entitlements.apply({
                 member, creator: creator.subject, active: !!ent.active, expiresAt: ent.expires_at || sub.current_period_end || null,
                 cancelAtPeriodEnd: !!sub.cancel_at_period_end, subscriptionId: sub.id || null, subscriptionStatus: sub.status || null,
                 reason: 'granted', source: 'billing_check', asOf: now(), checkoutId: id, traceparent,
             });
-            return { checkout: present(byId(id)), membership_started: !!ent.active, checkout_url: null, checkout_ref: null };
+            return { checkout: present(await byId(id)), membership_started: !!ent.active, checkout_url: null, checkout_ref: null };
         }
 
         let out;
@@ -81,7 +81,7 @@ function createCheckout({ db, now, config, billing, creators, plans, entitlement
                 cancelUrl: cancelUrl || `${config.baseUrl}/${encodeURIComponent(creator.username || '')}`,
                 key: `vip:checkout:${id}`, traceparent,
             });
-        } catch (e) { mark({ status: 'failed', error: String(e.code || e.message).slice(0, 200) }); billingProblem(e); }
+        } catch (e) { await mark({ status: 'failed', error: String(e.code || e.message).slice(0, 200) }); billingProblem(e); }
         const intent = out.intent || {};
         let url = out.checkout_url || null;
         if (!url && intent.checkout_ref && config.billing.powerchatLinkTemplate) {
@@ -89,13 +89,13 @@ function createCheckout({ db, now, config, billing, creators, plans, entitlement
         }
         // Only ever send a member to an http(s) page (never javascript:/data: from a bad answer).
         if (url && !/^https?:\/\//i.test(url)) url = null;
-        mark({ status: 'handed_off', billing_intent_id: intent.id || null, checkout_url: url, checkout_ref: intent.checkout_ref || null });
-        return { checkout: present(byId(id)), membership_started: false, checkout_url: url, checkout_ref: intent.checkout_ref || null, amount_cents: intent.amount_cents || null };
+        await mark({ status: 'handed_off', billing_intent_id: intent.id || null, checkout_url: url, checkout_ref: intent.checkout_ref || null });
+        return { checkout: present(await byId(id)), membership_started: false, checkout_url: url, checkout_ref: intent.checkout_ref || null, amount_cents: intent.amount_cents || null };
     }
 
     /** Cancel at period end, through Billing. Only the member themself. */
     async function cancel({ member, creatorId, traceparent }) {
-        const creator = creators.byId(creatorId);
+        const creator = await creators.byId(creatorId);
         if (!creator || !creator.subject) fail(404, 'vip.creator_not_found', `no creator ${creatorId}`);
         let row;
         try { row = await entitlements.authoritative(member, creator.subject, { traceparent }); } catch (e) { billingProblem(e); }
@@ -112,7 +112,7 @@ function createCheckout({ db, now, config, billing, creators, plans, entitlement
             out = await billing.cancelSubscription({ id: sub.id, key: `vip:cancel:${sub.id}:${sub.current_period_end || 'open'}`, traceparent });
         } catch (e) { billingProblem(e); }
         const s = (out && out.subscription) || {};
-        entitlements.applyCanceled({
+        await entitlements.applyCanceled({
             member, creator: creator.subject, subscriptionId: s.id || sub.id, subscriptionStatus: s.status || 'active',
             currentPeriodEnd: s.current_period_end || null, asOf: now(), traceparent, source: 'billing_check',
         });

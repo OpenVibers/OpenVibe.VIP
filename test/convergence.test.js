@@ -27,7 +27,7 @@ const TTL = 30_000;
     await t.call('POST', '/api/v1/plans', { user: creator, body: { name: 'Crew', publish: true } });
     const tokenClient = { authHeaders: async () => ({ Authorization: `Bearer ${t.network.signService({ sub: 'svc:community', cap: ['vip.entitlement.check', 'vip.resource.policy.evaluate'] })}` }) };
     let vipDown = false;
-    const fetchVia = (url, init) => (vipDown ? Promise.reject(new Error('connect ECONNREFUSED')) : fetch(url, init));
+    const fetchVia = async (url, init) => (vipDown ? Promise.reject(new Error('connect ECONNREFUSED')) : await fetch(url, init));
     const vip = createVipClient({ baseUrl: t.base, tokenClient, fetch: fetchVia });
     const newCache = () => createVipCache({ vip, ttlMs: TTL, denyTtlMs: 10_000, unavailableTtlMs: 2_000, now: t.clock.now });
     const space = { service: 'community', type: 'space', id: 'crew' };
@@ -38,7 +38,7 @@ const TTL = 30_000;
         assert.strictEqual(e.active, d.allow, `entitlement and evaluate agree (${e.status} / ${d.reason})`);
         return d.allow;
     };
-    const lastChanged = (m) => t.outboxEvents('vip.membership.changed').filter((e) => e.payload.member.id === m.subject).pop();
+    const lastChanged = async (m) => (await t.outboxEvents('vip.membership.changed')).filter((e) => e.payload.member.id === m.subject).pop();
 
     test('VIP emits vip.membership.changed; a cache given the event stops granting at once', async () => {
         const m = t.network.newUser('m1');
@@ -46,7 +46,7 @@ const TTL = 30_000;
         await t.deliverAll(t.billing.pay(m.subject, creator.subject).events);
         assert.strictEqual(await grants(cache, m), true);
         await t.deliverAll(t.billing.refund(m.subject, creator.subject).events);
-        const ev = lastChanged(m);
+        const ev = await lastChanged(m);
         assert.strictEqual(ev.payload.active, false);
         assert.strictEqual(await grants(cache, m), true, 'still the cached yes (the event has not reached the product)');
         assert.strictEqual(cache.handleEvent(ev), true);
@@ -149,5 +149,5 @@ const TTL = 30_000;
         assert.deepStrictEqual(cache.bounds, { grantMs: TTL, denyMs: 10_000, unavailableMs: 2_000 });
     });
 
-    await run().finally(() => t.close());
+    await run().finally(async () => await t.close());
 })();

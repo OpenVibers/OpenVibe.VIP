@@ -29,7 +29,7 @@ The nine authority tables (VIP is their only writer):
 |---|---|
 | `vip_creators` | a creator (a Network `usr_` subject, with a cached handle for `/:username`) or the network itself |
 | `vip_plans` | a plan: status (draft/published/archived), the Billing product it is sold as, its current version |
-| `vip_plan_versions` | **immutable** plan terms, one row per edit (SQLite triggers refuse UPDATE/DELETE except the one-time publish stamp) |
+| `vip_plan_versions` | **immutable** plan terms, one row per edit (database triggers refuse UPDATE/DELETE except the one-time publish stamp) |
 | `vip_perks` | perk definitions (creator or network scope): badge, emote, gated content, room, role, other |
 | `vip_plan_perks` | **immutable**: which perks a plan *version* includes, with the key and name it was published with |
 | `vip_product_bindings` | how a perk shows up in a product (`live chat_badge`, `chat badge`, `blog gated_post`, …) |
@@ -60,8 +60,9 @@ home that is not a cache.
 - **OpenVibe.Network** — RS256 service and user tokens (JWKS), OAuth sign-in for the pages, identity
   resolve (importer only).
 - **OpenVibe.Events** — delivery of Billing's events to `/internal/events`; relay of VIP's outbox.
-- **openvibe-contracts** v0.49.0, **openvibe-sdk** v0.12.0 (outbox, inbox, delivery signatures, per-actor
-  limits), **openvibe-shared** v1.25.0 (chrome, legal pages, release manifest and update metrics, metrics,
+- **PostgreSQL 18 and Valkey 9** (OpenVibe.Host `roles/data/`, ADR-035): every read and write is async through `openvibe-sdk/db`; Valkey holds the per-actor limit counters (optional).
+- **openvibe-contracts** v0.76.0, **openvibe-sdk** v0.20.1 (outbox, inbox, delivery signatures, per-actor
+  limits), **openvibe-shared** v1.27.0 (Frame, legal pages, release manifest and update metrics, metrics,
   readiness).
 - Consumers, through the client below: Chat (the member badge), Community (members-only spaces and
   threads), Blog (members-only posts) and Wiki (VIP spaces and pages); Live is not wired yet.
@@ -119,7 +120,7 @@ The vhost [deploy/nginx/openvibe.vip.conf](deploy/nginx/openvibe.vip.conf) is no
 ### The entitlement projection (Billing is the truth)
 
 `vip_entitlement_projection` is a cache of Billing's entitlements, fed by Billing's events
-(signed Events webhook + openvibe-sdk `createInbox`, exactly once) and by direct checks.
+(signed Events webhook + openvibe-sdk `createPgInbox`, exactly once) and by direct checks.
 
 - `valid_until = min(paid period end, last word from Billing + VIP_PROJECTION_MAX_AGE_MS)`; a "no"
   is kept for the max age.
@@ -386,7 +387,11 @@ on the host (Billing is in shadow and has sent VIP no events). The Live import r
 
 Production deploys with `sudo ovhost deploy vip` on the host (strategy `git-checkout`: fetch,
 fast-forward `/opt/openvibe.vip`, install on a lockfile change, restart, wait for `/api/ready`).
-The unit is `openvibe-vip.service` on `127.0.0.1:4620`, the env file `/etc/openvibe/vip.env`. State lives in
+The unit is `openvibe-vip.service` on `127.0.0.1:4620`, the env file `/etc/openvibe/vip.env`. The database is
+`ov_vip` on the host's data role (`sudo /opt/openvibe.host/roles/data/add-service.sh vip` writes its settings); the
+release migrates it at boot. The one-time move from SQLite is `scripts/migrate-to-postgres.js` (openvibe-sdk
+`runSqliteMigration`, with a `--pglite` rehearsal mode), run while the service is stopped; the old
+`/var/lib/openvibe-vip/vip.db` stays read-only for 7 days as the rollback. State lives in
 `/var/lib/openvibe-vip`. The vhost [deploy/nginx/openvibe.vip.conf](deploy/nginx/openvibe.vip.conf) waits
 for the launch: `openvibe.vip` serves the Sites placeholder.
 Rollback: ovhost puts the previous sha back by itself when `/api/ready` does not answer 2xx after the

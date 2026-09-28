@@ -30,7 +30,7 @@ const { test, run } = harness('plans');
         assert.strictEqual(plan.billing_kind, 'channel_subscription');
         assert.strictEqual(plan.current_version.version, 1);
         assert.deepStrictEqual(plan.current_version.perks.map((p) => p.key), ['emotes', 'supporter-role']);
-        const ev = t.outboxEvents('vip.plan.published');
+        const ev = await t.outboxEvents('vip.plan.published');
         assert.strictEqual(ev.length, 1);
         assert.strictEqual(ev[0].subject.id, plan.id);
         assert.strictEqual(ev[0].payload.version, 1);
@@ -39,29 +39,29 @@ const { test, run } = harness('plans');
 
     test('a member who joins under v1 is filed under v1', async () => {
         await t.deliverAll(t.billing.pay(early.subject, creator.subject).events);
-        const m = t.domain.memberships.get(early.subject, t.domain.creators.bySubject(creator.subject).id);
+        const m = await t.domain.memberships.get(early.subject, (await t.domain.creators.bySubject(creator.subject)).id);
         assert.strictEqual(m.plan_version_id, plan.current_version.id);
     });
 
     test('editing a published plan creates v2, publishes it, and never touches v1', async () => {
-        const before = t.domain.plans.version(plan.current_version.id);
+        const before = await t.domain.plans.version(plan.current_version.id);
         const res = await t.call('PATCH', `/api/v1/plans/${plan.id}`, { user: creator, body: { name: 'Inner circle', perks: ['supporter-role'], benefits: ['A role'], change_note: 'emotes moved to a separate plan' } });
         assert.strictEqual(res.status, 200, res.text);
         assert.strictEqual(res.json.version.version, 2);
         assert.strictEqual(res.json.plan.current_version.version, 2);
-        const after = t.domain.plans.version(plan.current_version.id);
+        const after = await t.domain.plans.version(plan.current_version.id);
         assert.deepStrictEqual(after, before, 'v1 row unchanged');
         const versions = await t.call('GET', `/api/v1/plans/${plan.id}/versions`, { token: null });
         assert.deepStrictEqual(versions.json.versions.map((v) => v.version), [2, 1]);
         assert.deepStrictEqual(versions.json.versions[1].perks.map((p) => p.key), ['emotes', 'supporter-role']);
-        assert.strictEqual(t.outboxEvents('vip.plan.published').length, 2);
+        assert.strictEqual((await t.outboxEvents('vip.plan.published')).length, 2);
     });
 
-    test('the database refuses to rewrite or delete a version', () => {
-        assert.throws(() => t.domain.db.prepare("UPDATE vip_plan_versions SET name = 'rewritten' WHERE id = ?").run(plan.current_version.id), /immutable/);
-        assert.throws(() => t.domain.db.prepare("UPDATE vip_plan_versions SET terms = '{}' WHERE id = ?").run(plan.current_version.id), /immutable/);
-        assert.throws(() => t.domain.db.prepare('DELETE FROM vip_plan_versions WHERE id = ?').run(plan.current_version.id), /immutable/);
-        assert.throws(() => t.domain.db.prepare("UPDATE vip_plan_perks SET perk_name = 'x' WHERE plan_version_id = ?").run(plan.current_version.id), /immutable/);
+    test('the database refuses to rewrite or delete a version', async () => {
+        await assert.rejects(t.domain.db.prepare("UPDATE vip_plan_versions SET name = 'rewritten' WHERE id = ?").run(plan.current_version.id), /immutable/);
+        await assert.rejects(t.domain.db.prepare("UPDATE vip_plan_versions SET terms = '{}' WHERE id = ?").run(plan.current_version.id), /immutable/);
+        await assert.rejects(t.domain.db.prepare('DELETE FROM vip_plan_versions WHERE id = ?').run(plan.current_version.id), /immutable/);
+        await assert.rejects(t.domain.db.prepare("UPDATE vip_plan_perks SET perk_name = 'x' WHERE plan_version_id = ?").run(plan.current_version.id), /immutable/);
     });
 
     test('an edit that changes nothing creates no version', async () => {
@@ -71,7 +71,7 @@ const { test, run } = harness('plans');
     });
 
     test('renaming a perk does not change published terms', async () => {
-        const perk = t.domain.perks.byKey(t.domain.creators.bySubject(creator.subject).id, 'emotes');
+        const perk = await t.domain.perks.byKey((await t.domain.creators.bySubject(creator.subject)).id, 'emotes');
         await t.call('PATCH', `/api/v1/perks/${perk.id}`, { user: creator, body: { name: 'Renamed emotes' } });
         const v1 = (await t.call('GET', `/api/v1/plans/${plan.id}/versions`, { token: null })).json.versions[1];
         assert.strictEqual(v1.perks.find((p) => p.key === 'emotes').name, 'Members emotes');
@@ -79,13 +79,13 @@ const { test, run } = harness('plans');
 
     test('old members keep old terms; new members get the new version', async () => {
         await t.deliverAll(t.billing.pay(late.subject, creator.subject).events);
-        const cid = t.domain.creators.bySubject(creator.subject).id;
-        const mEarly = t.domain.memberships.get(early.subject, cid);
-        const mLate = t.domain.memberships.get(late.subject, cid);
-        assert.strictEqual(t.domain.plans.version(mEarly.plan_version_id).version, 1);
-        assert.strictEqual(t.domain.plans.version(mLate.plan_version_id).version, 2);
-        assert.deepStrictEqual(t.domain.memberships.perkKeys(mEarly), ['emotes', 'supporter-role']);
-        assert.deepStrictEqual(t.domain.memberships.perkKeys(mLate), ['supporter-role']);
+        const cid = (await t.domain.creators.bySubject(creator.subject)).id;
+        const mEarly = await t.domain.memberships.get(early.subject, cid);
+        const mLate = await t.domain.memberships.get(late.subject, cid);
+        assert.strictEqual((await t.domain.plans.version(mEarly.plan_version_id)).version, 1);
+        assert.strictEqual((await t.domain.plans.version(mLate.plan_version_id)).version, 2);
+        assert.deepStrictEqual(await t.domain.memberships.perkKeys(mEarly), ['emotes', 'supporter-role']);
+        assert.deepStrictEqual(await t.domain.memberships.perkKeys(mLate), ['supporter-role']);
         const status = await t.call('GET', `/api/v1/memberships/${early.subject}`, { user: early });
         assert.strictEqual(status.status, 200);
         assert.strictEqual(status.json.memberships[0].plan_version.version, 1);
@@ -95,8 +95,8 @@ const { test, run } = harness('plans');
     test('a renewal keeps the version the membership was bought under', async () => {
         t.clock.advance(29 * DAY);
         await t.deliverAll(t.billing.pay(early.subject, creator.subject).events);   // reason: renewed
-        const m = t.domain.memberships.get(early.subject, t.domain.creators.bySubject(creator.subject).id);
-        assert.strictEqual(t.domain.plans.version(m.plan_version_id).version, 1);
+        const m = await t.domain.memberships.get(early.subject, (await t.domain.creators.bySubject(creator.subject)).id);
+        assert.strictEqual((await t.domain.plans.version(m.plan_version_id)).version, 1);
     });
 
     test('a new purchase after the membership lapsed takes the current version', async () => {
@@ -106,8 +106,8 @@ const { test, run } = harness('plans');
         await t.deliverAll(t.billing.expire(sub.id, 'canceled').events);
         await t.call('PATCH', `/api/v1/plans/${plan.id}`, { user: creator, body: { benefits: ['A role', 'Monthly Q&A'], change_note: 'added Q&A' } });
         await t.deliverAll(t.billing.pay(late.subject, creator.subject).events);   // reason: granted
-        const m = t.domain.memberships.get(late.subject, t.domain.creators.bySubject(creator.subject).id);
-        assert.strictEqual(t.domain.plans.version(m.plan_version_id).version, 3);
+        const m = await t.domain.memberships.get(late.subject, (await t.domain.creators.bySubject(creator.subject)).id);
+        assert.strictEqual((await t.domain.plans.version(m.plan_version_id)).version, 3);
     });
 
     test('Billing sells one channel subscription per creator: a second published plan is refused', async () => {
@@ -123,7 +123,7 @@ const { test, run } = harness('plans');
     });
 
     test('archived plans keep their members on their terms and cannot be edited', async () => {
-        const m = t.domain.memberships.get(early.subject, t.domain.creators.bySubject(creator.subject).id);
+        const m = await t.domain.memberships.get(early.subject, (await t.domain.creators.bySubject(creator.subject)).id);
         assert.strictEqual(m.plan_id, plan.id);
         const res = await t.call('PATCH', `/api/v1/plans/${plan.id}`, { user: creator, body: { name: 'x' } });
         assert.strictEqual(res.status, 409);
@@ -156,12 +156,12 @@ const { test, run } = harness('plans');
     });
 
     test('drafts are hidden from the public', async () => {
-        const drafts = t.domain.plans.list({ creatorId: t.domain.creators.bySubject(creator.subject).id, includeDrafts: true }).filter((p) => p.status === 'draft');
+        const drafts = (await t.domain.plans.list({ creatorId: (await t.domain.creators.bySubject(creator.subject)).id, includeDrafts: true })).filter((p) => p.status === 'draft');
         const res = await t.call('GET', `/api/v1/plans/${drafts[0].id}`, { token: null });
         assert.strictEqual(res.status, 404);
         const own = await t.call('GET', `/api/v1/plans/${drafts[0].id}`, { user: creator });
         assert.strictEqual(own.status, 200);
     });
 
-    await run().finally(() => t.close());
+    await run().finally(async () => await t.close());
 })();

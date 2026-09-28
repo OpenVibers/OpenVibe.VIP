@@ -18,18 +18,17 @@
  */
 const express = require('express');
 const { http } = require('openvibe-contracts');
-const { parseDelivery, createInbox } = require('openvibe-sdk/events');
+const { parseDelivery, createPgInbox } = require('openvibe-sdk/events');
 const { isUserSubject } = require('../util');
 
 const CONSUMER = 'vip-billing';
 
 function consumerRouter({ domain, config, log = console }) {
     const router = express.Router();
-    const inbox = createInbox(domain.db, { now: domain.now });
-    inbox.ensureSchema();
+    const inbox = createPgInbox(domain.db, { now: domain.now });   // idempotency_receipts: migrations/0001_initial.sql
     const { entitlements } = domain;
 
-    function handle(event) {
+    async function handle(event) {
         const p = event.payload && typeof event.payload === 'object' ? event.payload : {};
         const asOf = Date.parse(event.timestamp);
         if (!Number.isFinite(asOf)) return 'ignored:bad_timestamp';
@@ -39,21 +38,21 @@ function consumerRouter({ domain, config, log = console }) {
             if (!isUserSubject(member) || !isUserSubject(creator)) return 'ignored:bad_subjects';
             if (p.kind && p.kind !== entitlements.KIND) return 'ignored:kind';
             const sub = p.subscription || null;
-            return entitlements.apply({
+            return (await entitlements.apply({
                 member, creator, active: !!p.active, expiresAt: p.expires_at || null,
                 cancelAtPeriodEnd: sub ? !!sub.cancel_at_period_end : undefined, subscriptionId: sub ? sub.id : undefined,
                 subscriptionStatus: sub ? sub.status : undefined, reason: p.reason || null, source: 'event', eventId: event.event_id, asOf,
-            }).outcome;
+            })).outcome;
         }
         if (event.event_type === 'billing.subscription.canceled') {
             const s = p.subscription || {};
             const member = s.subscriber && s.subscriber.id;
             const creator = s.streamer && s.streamer.id;
             if (!isUserSubject(member) || !isUserSubject(creator)) return 'ignored:bad_subjects';
-            return entitlements.applyCanceled({
+            return (await entitlements.applyCanceled({
                 member, creator, subscriptionId: s.id || null, subscriptionStatus: s.status || null,
                 currentPeriodEnd: s.current_period_end || null, eventId: event.event_id, asOf,
-            }).outcome;
+            })).outcome;
         }
         if (event.event_type === 'billing.transaction.reversed') {
             if (!(Number(p.entitlements_revoked) > 0)) return 'ignored:no_entitlement';
@@ -61,18 +60,18 @@ function consumerRouter({ domain, config, log = console }) {
             const member = p.to_subject;
             const creator = p.from_subject;
             if (!isUserSubject(member) || !isUserSubject(creator)) return 'ignored:bad_subjects';
-            return entitlements.doubt(member, creator) ? 'doubt' : 'no_projection';
+            return await entitlements.doubt(member, creator) ? 'doubt' : 'no_projection';
         }
         return 'ignored:type';
     }
 
     /** Apply one envelope (also used by tests). Returns { duplicate, outcome }. */
-    function apply(event) {
-        const r = inbox.once(CONSUMER, event.event_id, () => (event.source !== 'billing' ? 'ignored:source' : handle(event)));
+    async function apply(event) {
+        const r = await inbox.once(CONSUMER, event.event_id, async () => (event.source !== 'billing' ? 'ignored:source' : await handle(event)));
         return r.duplicate ? { duplicate: true, outcome: null } : { duplicate: false, outcome: r.result };
     }
 
-    router.post('/events', express.raw({ type: () => true, limit: '256kb' }), (req, res) => {
+    router.post('/events', express.raw({ type: () => true, limit: '256kb' }), async (req, res) => {
         const secrets = config.events.webhookSecrets;
         if (!secrets.length) return http.sendProblem(res, 503, 'vip.webhook_disabled', { detail: 'VIP_EVENTS_SECRET is not set', ctx: req.ov });
         const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
@@ -86,7 +85,7 @@ function consumerRouter({ domain, config, log = console }) {
         }
         let out;
         try {
-            out = apply(event);
+            out = await apply(event);
         } catch (e) {
             // Not acknowledged: Events retries it, and the inbox claim rolled back with the change.
             log.error(`[VIP] event ${event.event_id} (${event.event_type}) failed:`, e.message);

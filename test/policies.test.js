@@ -230,5 +230,5 @@ const { test, run } = harness('policies');
         assert.strictEqual((await garbage.evaluate({ subject: member.subject, resource: res })).allow, false, 'only a literal true allows');
     });
 
-    await run().finally(() => t.close());
+    await run().finally(async () => await t.close());
 })();

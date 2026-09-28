@@ -16,12 +16,21 @@
  */
 const { createReadiness } = require('openvibe-shared/ready');
 
-function createVipReadiness({ db, keys, config, outbox, now, release = null, fetchImpl = globalThis.fetch }) {
+function createVipReadiness({ db, keys, config, outbox, now, release = null, fetchImpl = globalThis.fetch, valkey = null }) {
     return createReadiness({
         service: 'vip',
         release,
         checks: [
-            { name: 'db', required: true, check: () => db.prepare('SELECT COUNT(*) AS n FROM vip_creators').get().n >= 1 || 'database has no network creator row' },
+            {
+                name: 'db', required: true,
+                // A real round trip that names the store (postgresql / pglite), and the network creator row present.
+                check: async () => {
+                    const r = await db.ready();
+                    if (!r.ok) return r.error;
+                    return (await db.prepare('SELECT COUNT(*) AS n FROM vip_creators').get()).n >= 1 ? { ok: true, detail: r.detail } : 'database has no network creator row';
+                },
+            },
+            { name: 'valkey', required: false, check: async () => (valkey ? valkey.ready() : { skipped: 'VALKEY_URL not set: per-actor limits count in this process only' }) },
             {
                 name: 'network_jwks', required: false,
                 check: () => (keys.get() ? true : 'Network signing key not loaded yet: tokens cannot be verified'),
@@ -35,10 +44,10 @@ function createVipReadiness({ db, keys, config, outbox, now, release = null, fet
                 },
             },
         ],
-        details: (body) => {
+        details: async (body) => {
             if (body.checks.db.status !== 'ok') return {};
             const t = now();
-            const p = db.prepare('SELECT COUNT(*) AS n, SUM(CASE WHEN valid_until < ? THEN 1 ELSE 0 END) AS stale FROM vip_entitlement_projection').get(t);
+            const p = await db.prepare('SELECT COUNT(*) AS n, SUM(CASE WHEN valid_until < ? THEN 1 ELSE 0 END) AS stale FROM vip_entitlement_projection').get(t);
             return {
                 events: outbox.status(),
                 billing_events_accepted: config.events.webhookSecrets.length > 0,

@@ -69,7 +69,7 @@ function createBillingClient(config, { fetchImpl = globalThis.fetch, tokenClient
         } catch (e) {
             throw new BillingCallError(`Billing unreachable: ${e.message}`);
         }
-        if (res.status === 401 && !retried) { tokensFor(cap).invalidate(); return call(cap, method, path, { body, key, traceparent, retried: true }); }
+        if (res.status === 401 && !retried) { tokensFor(cap).invalidate(); return await call(cap, method, path, { body, key, traceparent, retried: true }); }
         const data = await res.json().catch(() => null);
         if (!res.ok) {
             const code = (data && (data.code || data.error)) || `http_${res.status}`;
@@ -82,21 +82,21 @@ function createBillingClient(config, { fetchImpl = globalThis.fetch, tokenClient
 
     return {
         /** { intent, checkout_url } — a subscription checkout for `subject` to `creator`. */
-        createIntent: ({ provider, subject, creator, autoRenew, successUrl, cancelUrl, key, traceparent }) => call(CAPS.intent, 'POST', '/api/v1/intents', {
+        createIntent: async ({ provider, subject, creator, autoRenew, successUrl, cancelUrl, key, traceparent }) => await call(CAPS.intent, 'POST', '/api/v1/intents', {
             body: { provider, kind: 'subscription', subject: user(subject), streamer: user(creator), auto_renew: !!autoRenew, success_url: successUrl, cancel_url: cancelUrl },
             key, traceparent,
         }),
         /** { subscription, entitlement, transaction } — one period paid from the member's credit. */
-        subscribeWithCredit: ({ subscriber, creator, autoRenew, key, traceparent }) => call(CAPS.subscription, 'POST', '/api/v1/subscriptions', {
+        subscribeWithCredit: async ({ subscriber, creator, autoRenew, key, traceparent }) => await call(CAPS.subscription, 'POST', '/api/v1/subscriptions', {
             body: { subscriber: user(subscriber), streamer: user(creator), source: 'credit', auto_renew: autoRenew !== false },
             key, traceparent,
         }),
-        cancelSubscription: ({ id, key, traceparent }) => call(CAPS.subscription, 'POST', `/api/v1/subscriptions/${encodeURIComponent(id)}/cancel`, { body: {}, key, traceparent }),
-        getSubscription: (id) => call(CAPS.entitlement, 'GET', `/api/v1/subscriptions/${encodeURIComponent(id)}`),
-        listSubscriptions: ({ streamer, subscriber, status } = {}) => call(CAPS.entitlement, 'GET', `/api/v1/subscriptions${qs({ streamer, subscriber, status })}`),
+        cancelSubscription: async ({ id, key, traceparent }) => await call(CAPS.subscription, 'POST', `/api/v1/subscriptions/${encodeURIComponent(id)}/cancel`, { body: {}, key, traceparent }),
+        getSubscription: async (id) => await call(CAPS.entitlement, 'GET', `/api/v1/subscriptions/${encodeURIComponent(id)}`),
+        listSubscriptions: async ({ streamer, subscriber, status } = {}) => await call(CAPS.entitlement, 'GET', `/api/v1/subscriptions${qs({ streamer, subscriber, status })}`),
         /** { active, expires_at, subscription } — the authoritative answer. */
-        entitlement: (subject, creator) => call(CAPS.entitlement, 'GET', `/api/v1/entitlements/${encodeURIComponent(subject)}${qs({ streamer: creator })}`),
-        rates: () => call(CAPS.entitlement, 'GET', '/api/v1/rates'),
+        entitlement: async (subject, creator) => await call(CAPS.entitlement, 'GET', `/api/v1/entitlements/${encodeURIComponent(subject)}${qs({ streamer: creator })}`),
+        rates: async () => await call(CAPS.entitlement, 'GET', '/api/v1/rates'),
         baseUrl: () => base,
     };
 }

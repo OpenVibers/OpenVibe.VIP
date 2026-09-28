@@ -85,7 +85,7 @@ function createEmbedRoutes({ domain, config }) {
     /** The creator and its card, or null (unknown handle, suspended, no published plan). */
     async function lookup(username) {
         if (!USERNAME_RE.test(String(username || ''))) return null;
-        const c = creators.byUsername(username);
+        const c = await creators.byUsername(username);
         const card = c ? await cards.card(c) : null;
         return card ? { c, card } : null;
     }

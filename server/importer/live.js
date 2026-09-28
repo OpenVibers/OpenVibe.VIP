@@ -30,8 +30,8 @@
  */
 const { iso } = require('../util');
 
-const tableExists = (db, name) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
-const columns = (db, t) => (tableExists(db, t) ? db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name) : []);
+const tableExists = async (db, name) => !!await db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
+const columns = async (db, t) => (await tableExists(db, t) ? (await db.prepare(`PRAGMA table_info(${t})`).all()).map((c) => c.name) : []);
 const CREATOR_ROLES = ['streamer', 'global_mod', 'admin'];
 const PLAN_SLUG = 'channel-subscription';
 const PERK_KEY = 'subscriber-badge';
@@ -53,16 +53,16 @@ function billingSnapshotSource(bdb, { now = () => Date.now() } = {}) {
     const subs = bdb.prepare('SELECT * FROM subscriptions WHERE streamer = ? ORDER BY created_at');
     return {
         name: 'billing snapshot',
-        listSubscriptions: async (creator) => subs.all(creator).map((s) => ({
+        listSubscriptions: async (creator) => (await subs.all(creator)).map((s) => ({
             id: s.id, subscriber: { type: 'user', id: s.subscriber }, streamer: { type: 'user', id: s.streamer }, status: s.status,
             auto_renew: !!s.auto_renew, cancel_at_period_end: !!s.cancel_at_period_end, current_period_end: s.current_period_end, legacy_live_id: s.legacy_live_id ?? null,
         })),
         entitlement: async (member, creator) => {
             const at = iso(now());
-            const rows = bdb.prepare(`SELECT starts_at, ends_at FROM entitlements WHERE subject = ? AND kind = 'channel_subscription' AND scope = ?
+            const rows = await bdb.prepare(`SELECT starts_at, ends_at FROM entitlements WHERE subject = ? AND kind = 'channel_subscription' AND scope = ?
                 AND revoked_at IS NULL AND ends_at > ? ORDER BY starts_at`).all(member, creator, at);
             const active = rows.some((r) => r.starts_at <= at);
-            const sub = bdb.prepare('SELECT * FROM subscriptions WHERE subscriber = ? AND streamer = ?').get(member, creator);
+            const sub = await bdb.prepare('SELECT * FROM subscriptions WHERE subscriber = ? AND streamer = ?').get(member, creator);
             return {
                 active, expires_at: active ? rows.reduce((m, r) => (r.ends_at > m ? r.ends_at : m), '') : null,
                 subscription: sub ? { id: sub.id, status: sub.status, auto_renew: !!sub.auto_renew, cancel_at_period_end: !!sub.cancel_at_period_end } : null,
@@ -87,16 +87,16 @@ async function importLive(domain, { live, billingSource, resolveLiveUsers, dryRu
     };
 
     // ── Read the snapshot ────────────────────────────────────
-    const hasUsers = tableExists(live, 'users');
-    const userCols = columns(live, 'users');
-    const users = hasUsers ? live.prepare(`SELECT id, username, display_name${userCols.includes('role') ? ', role' : ", 'user' AS role"} FROM users`).all() : [];
+    const hasUsers = await tableExists(live, 'users');
+    const userCols = await columns(live, 'users');
+    const users = hasUsers ? await live.prepare(`SELECT id, username, display_name${userCols.includes('role') ? ', role' : ", 'user' AS role"} FROM users`).all() : [];
     const byLiveId = new Map(users.map((u) => [String(u.id), u]));
-    const subCols = columns(live, 'subscriptions');
-    const liveSubs = subCols.length ? live.prepare('SELECT * FROM subscriptions ORDER BY id').all() : [];
-    if (tableExists(live, 'site_settings')) {
-        const get = (k) => { const r = live.prepare('SELECT value FROM site_settings WHERE key = ?').get(k); return r ? r.value : null; };
+    const subCols = await columns(live, 'subscriptions');
+    const liveSubs = subCols.length ? await live.prepare('SELECT * FROM subscriptions ORDER BY id').all() : [];
+    if (await tableExists(live, 'site_settings')) {
+        const get = async (k) => { const r = await live.prepare('SELECT value FROM site_settings WHERE key = ?').get(k); return r ? r.value : null; };
         report.live_offering = {
-            sub_price_usd: get('sub_price_usd'), sub_streamer_share_pct: get('sub_streamer_share_pct'), sub_site_route_fee_pct: get('sub_site_route_fee_pct'),
+            sub_price_usd: await get('sub_price_usd'), sub_streamer_share_pct: await get('sub_streamer_share_pct'), sub_site_route_fee_pct: await get('sub_site_route_fee_pct'),
             note: 'recorded for reference only: OpenVibe.Billing prices and charges subscriptions; VIP plan terms carry no price',
         };
     }
@@ -136,13 +136,13 @@ async function importLive(domain, { live, billingSource, resolveLiveUsers, dryRu
         VALUES (@source, @table, @id, @target_type, @target_id, @status, @reason, @run, @at, @at)
         ON CONFLICT (source, source_table, source_id) DO UPDATE SET target_type = excluded.target_type, target_id = excluded.target_id, status = excluded.status,
             reason = excluded.reason, run_id = excluded.run_id, updated_at = excluded.updated_at`);
-    const record = (source, table, id, fields) => upsertMap.run({ source, table, id: String(id), target_type: null, target_id: null, reason: null, run: runId, at, ...fields });
+    const record = async (source, table, id, fields) => await upsertMap.run({ source, table, id: String(id), target_type: null, target_id: null, reason: null, run: runId, at, ...fields });
 
-    const run = () => {
+    const run = async () => {
         // ── 1. The network perk ──────────────────────────────
-        let perk = perks.byKey('network', PERK_KEY);
+        let perk = await perks.byKey('network', PERK_KEY);
         if (!perk) {
-            perk = perks.create({
+            perk = await perks.create({
                 creatorId: 'network', key: PERK_KEY, name: 'Subscriber badge', kind: 'badge', actor: ACTOR,
                 description: 'A star badge next to your name in the creator\'s chat, as channel subscribers had on OpenVibe.Live.',
                 bindings: [
@@ -152,48 +152,48 @@ async function importLive(domain, { live, billingSource, resolveLiveUsers, dryRu
                     { product: 'chat', binding: 'badge', config: { badge: 'subscriber' } },
                 ],
             });
-            record('live', 'offering', 'subscriber_badge', { target_type: 'perk', target_id: perk.id, status: 'imported' });
+            await record('live', 'offering', 'subscriber_badge', { target_type: 'perk', target_id: perk.id, status: 'imported' });
         }
 
         // ── 2 + 3. Creators and their plan ───────────────────
         for (const id of [...creatorIds].sort((a, b) => Number(a) - Number(b))) {
-            const prev = mapRow.get('live', 'users', id);
+            const prev = await mapRow.get('live', 'users', id);
             const subject = subjectOf(id);
             const u = byLiveId.get(id);
             if (!subject) {
                 const reason = `Live user ${id}${u ? ` (${u.username})` : ''} has no Network subject yet`;
-                record('live', 'users', id, { status: 'held', reason });
+                await record('live', 'users', id, { status: 'held', reason });
                 report.counts.creators.held++; report.holds.push({ live_user: Number(id), reason });
                 continue;
             }
-            const existed = creators.bySubject(subject);
-            const c = creators.ensure({ subject, username: handleOf(id), displayName: u ? u.display_name : null, origin: existed ? existed.origin : 'import' });
+            const existed = await creators.bySubject(subject);
+            const c = await creators.ensure({ subject, username: handleOf(id), displayName: u ? u.display_name : null, origin: existed ? existed.origin : 'import' });
             if (prev && prev.status !== 'held') report.counts.creators.unchanged++;
             else { report.counts.creators[prev ? 'released' : 'imported']++; }
-            record('live', 'users', id, { target_type: 'creator', target_id: c.id, status: 'imported', reason: prev && prev.status === 'held' ? 'released from hold' : null });
+            await record('live', 'users', id, { target_type: 'creator', target_id: c.id, status: 'imported', reason: prev && prev.status === 'held' ? 'released from hold' : null });
 
-            const offer = mapRow.get('live', 'offering', `channel_subscription:${id}`);
-            if (offer && offer.target_id && plans.byId(offer.target_id)) { report.counts.plans.unchanged++; continue; }
-            const own = plans.purchasable(c.id);
+            const offer = await mapRow.get('live', 'offering', `channel_subscription:${id}`);
+            if (offer && offer.target_id && await plans.byId(offer.target_id)) { report.counts.plans.unchanged++; continue; }
+            const own = await plans.purchasable(c.id);
             if (own) {
-                record('live', 'offering', `channel_subscription:${id}`, { target_type: 'plan', target_id: own.id, status: 'linked', reason: 'the creator already publishes a plan sold as the channel subscription' });
+                await record('live', 'offering', `channel_subscription:${id}`, { target_type: 'plan', target_id: own.id, status: 'linked', reason: 'the creator already publishes a plan sold as the channel subscription' });
                 report.counts.plans.linked++;
                 continue;
             }
-            const existingSlug = db.prepare('SELECT * FROM vip_plans WHERE creator_id = ? AND slug = ?').get(c.id, PLAN_SLUG);
+            const existingSlug = await db.prepare('SELECT * FROM vip_plans WHERE creator_id = ? AND slug = ?').get(c.id, PLAN_SLUG);
             if (existingSlug) {
-                record('live', 'offering', `channel_subscription:${id}`, { target_type: 'plan', target_id: existingSlug.id, status: 'linked', reason: `plan ${PLAN_SLUG} already exists (status ${existingSlug.status})` });
+                await record('live', 'offering', `channel_subscription:${id}`, { target_type: 'plan', target_id: existingSlug.id, status: 'linked', reason: `plan ${PLAN_SLUG} already exists (status ${existingSlug.status})` });
                 report.counts.plans.linked++;
                 continue;
             }
             const name = c.display_name || c.username || 'this creator';
-            const plan = plans.create({
+            const plan = await plans.create({
                 creatorId: c.id, slug: PLAN_SLUG, name: 'Channel subscription',
                 description: `A monthly subscription to ${name}'s channel, carried over from OpenVibe.Live.`,
                 benefits: [`A subscriber badge next to your name in ${name}'s chat`],
                 perks: [PERK_KEY], billingKind: 'channel_subscription', publish: true, changeNote: 'imported from OpenVibe.Live', actor: ACTOR,
             });
-            record('live', 'offering', `channel_subscription:${id}`, { target_type: 'plan', target_id: plan.id, status: 'imported' });
+            await record('live', 'offering', `channel_subscription:${id}`, { target_type: 'plan', target_id: plan.id, status: 'imported' });
             report.counts.plans.created++;
         }
 
@@ -202,17 +202,17 @@ async function importLive(domain, { live, billingSource, resolveLiveUsers, dryRu
             if (!list) continue;
             for (const sub of list) {
                 const member = sub.subscriber && sub.subscriber.id;
-                const prev = mapRow.get('billing', 'subscriptions', sub.id);
+                const prev = await mapRow.get('billing', 'subscriptions', sub.id);
                 if (sub.status !== 'active') {
                     if (!prev) {
                         const reason = `Billing subscription is ${sub.status}: no current membership to file terms for`;
-                        record('billing', 'subscriptions', sub.id, { status: 'excluded', reason });
+                        await record('billing', 'subscriptions', sub.id, { status: 'excluded', reason });
                         report.counts.memberships.excluded++; report.excluded.push({ billing_subscription: sub.id, reason });
                     } else report.counts.memberships.unchanged++;
                     continue;
                 }
                 const e = ents.get(`${member}:${creatorSubject}`) || { active: false, expires_at: null };
-                const out = entitlements.apply({
+                const out = await entitlements.apply({
                     member, creator: creatorSubject, active: !!e.active, expiresAt: e.expires_at || null,
                     cancelAtPeriodEnd: !!sub.cancel_at_period_end, subscriptionId: sub.id, subscriptionStatus: sub.status,
                     reason: 'imported', source: 'import', origin: 'import', asOf: domain.now(),
@@ -220,27 +220,27 @@ async function importLive(domain, { live, billingSource, resolveLiveUsers, dryRu
                 const m = out.membership;
                 if (!e.active || !m) {
                     const reason = 'Billing lists the subscription as active but its entitlement is not active now';
-                    record('billing', 'subscriptions', sub.id, { status: 'excluded', reason });
+                    await record('billing', 'subscriptions', sub.id, { status: 'excluded', reason });
                     report.counts.memberships.excluded++; report.excluded.push({ billing_subscription: sub.id, reason });
                     continue;
                 }
                 if (prev && prev.status === 'imported' && prev.target_id === m.id) report.counts.memberships.unchanged++;
                 else report.counts.memberships.imported++;
-                record('billing', 'subscriptions', sub.id, { target_type: 'membership', target_id: m.id, status: 'imported' });
+                await record('billing', 'subscriptions', sub.id, { target_type: 'membership', target_id: m.id, status: 'imported' });
             }
         }
 
         // ── 5. Live's subscriptions rows ─────────────────────
         const membershipFor = db.prepare('SELECT m.id FROM vip_memberships m JOIN vip_creators c ON c.id = m.creator_id WHERE m.member_subject = ? AND c.subject = ?');
         for (const s of liveSubs) {
-            const prev = mapRow.get('live', 'subscriptions', String(s.id));
+            const prev = await mapRow.get('live', 'subscriptions', String(s.id));
             const member = subjectOf(s.subscriber_id);
             const creator = subjectOf(s.streamer_id);
             let fields;
             if (!member || !creator) {
                 fields = { status: 'held', reason: `${!member ? `subscriber (Live user ${s.subscriber_id})` : `creator (Live user ${s.streamer_id})`} has no Network subject yet` };
             } else {
-                const m = membershipFor.get(member, creator);
+                const m = await membershipFor.get(member, creator);
                 const bsub = (billingSubs.get(creator) || []).find((x) => x.subscriber && x.subscriber.id === member);
                 if (m) fields = { status: 'linked', target_type: 'membership', target_id: m.id };
                 else if (bsub) fields = { status: 'linked', target_type: 'billing_subscription', target_id: bsub.id, reason: `Billing holds it (status ${bsub.status}); no current membership` };
@@ -248,7 +248,7 @@ async function importLive(domain, { live, billingSource, resolveLiveUsers, dryRu
                 else fields = { status: 'held', reason: 'Billing has no subscription for this pair (run Billing\'s Live import first)' };
             }
             if (prev && prev.status === fields.status && prev.target_id === (fields.target_id || null)) { report.counts.live_subscriptions.unchanged++; continue; }
-            record('live', 'subscriptions', s.id, fields);
+            await record('live', 'subscriptions', s.id, fields);
             report.counts.live_subscriptions[fields.status === 'held' ? 'held' : 'linked']++;
             if (fields.status === 'held') report.holds.push({ live_subscription: s.id, reason: fields.reason });
         }
@@ -256,7 +256,7 @@ async function importLive(domain, { live, billingSource, resolveLiveUsers, dryRu
     };
 
     try {
-        db.transaction(run)();
+        await db.tx(run);
     } catch (e) {
         if (!(e instanceof DryRun)) throw e;
     }

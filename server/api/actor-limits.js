@@ -15,7 +15,7 @@
  * (/embed, public pages behind nginx), and the signed Events deliveries at /internal/events (Billing's membership changes:
  * Events pushes at its own pace, and a 429 would only make it retry and fall behind).
  */
-const { createActorLimiter, defaultActor } = require('openvibe-sdk/limits');
+const { createActorLimiter, createValkeyLimitStore, defaultActor } = require('openvibe-sdk/limits');
 
 function actor(req) {
     const p = req.principal;
@@ -28,7 +28,7 @@ function actor(req) {
  * limits(name, own) middleware for one app, plus limits.reads(name, skip): the defaults on GET/HEAD
  * requests, except those `skip(req)` names (routes that set their own).
  */
-function createActorLimits({ config, now = () => Date.now(), registry = null, log = console }) {
+function createActorLimits({ config, now = () => Date.now(), registry = null, log = console, valkey = null }) {
     const refused = registry
         ? registry.counter({ name: 'vip_rate_limited_total', help: 'Requests refused 429 by a per-actor limit, by limit name and window', labelNames: ['limit', 'window'] })
         : null;
@@ -36,6 +36,8 @@ function createActorLimits({ config, now = () => Date.now(), registry = null, lo
         limits: { minute: config.actorLimits.minute, hour: config.actorLimits.hour },
         actor,
         now,
+        // Shared across processes on Valkey (ADR-035) when VALKEY_URL is set; in-process otherwise.
+        ...(valkey ? { store: createValkeyLimitStore(valkey) } : {}),
         onLimited(e) {
             // The actor is a principal, a subject id or an address, never a token.
             log.warn(`[VIP] limit ${e.name}: ${e.actor} refused, over ${e.limit} per ${e.window}`);

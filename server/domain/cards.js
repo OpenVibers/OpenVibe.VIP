@@ -59,17 +59,19 @@ function createCards({ db, config, creators, plans, perks, billing, now, log = c
         return pending;
     }
 
-    const kindOf = (perkId) => { const p = perks.byId(perkId); return p ? p.kind : 'other'; };
+    const kindOf = async (perkId) => { const p = await perks.byId(perkId); return p ? p.kind : 'other'; };
 
     /** The published plans of a creator, each at the version new members buy. */
-    function publicPlans(c) {
-        return plans.list({ creatorId: c.id }).map((p) => plans.present(p)).filter((p) => p.current_version);
+    async function publicPlans(c) {
+        return (await Promise.all((await plans.list({ creatorId: c.id })).map(async (p) => await plans.present(p)))).filter((p) => p.current_version);
     }
 
-    function badge(c, list = publicPlans(c)) {
+    async function badge(c, list = null) {
+        if (!list) list = await publicPlans(c);
         const plan = list.find((p) => p.purchasable) || list[0];
         const v = plan && plan.current_version;
-        const perk = v && v.perks.find((x) => kindOf(x.id) === 'badge');
+        const kinds = v ? await Promise.all(v.perks.map(async (x) => await kindOf(x.id))) : [];
+        const perk = v && v.perks.find((_, i) => kinds[i] === 'badge');
         const label = perk ? perk.name.replace(BADGE_SUFFIX, '').trim() || perk.name : 'Member';
         return { label: label.slice(0, 24) };
     }
@@ -85,28 +87,28 @@ function createCards({ db, config, creators, plans, perks, billing, now, log = c
     /** The public card of a creator row, or null when it has none (no handle, suspended, no published plan). */
     async function card(c) {
         if (!c || c.kind !== 'creator' || c.status !== 'active' || !c.username) return null;
-        const list = publicPlans(c);
+        const list = await publicPlans(c);
         if (!list.length) return null;
         const u = urls(c);
         const joiningOpen = config.billing.providers.length > 0 && list.some((p) => p.purchasable);
-        const [members, sub] = await Promise.all([memberCount(c), list.some((p) => p.purchasable) ? price() : null]);
+        const [members, sub] = await Promise.all([memberCount(c), list.some((p) => p.purchasable) ? await price() : null]);
         return {
             creator: { username: c.username, display_name: c.display_name || c.username, url: u.page },
-            plans: list.map((p) => {
+            plans: (await Promise.all(list.map(async (p) => {
                 const v = p.current_version;
                 return {
                     id: p.id, slug: p.slug, name: v.name, description: v.description, benefits: v.benefits, version: v.version,
-                    perks: v.perks.map((x) => ({ key: x.key, name: x.name, kind: kindOf(x.id) })),
+                    perks: (await Promise.all(v.perks.map(async (x) => ({ key: x.key, name: x.name, kind: await kindOf(x.id) })))),
                     purchasable: p.purchasable,
                     join_url: `${u.page}#plan-${encodeURIComponent(p.slug)}`,
                     terms_url: `${u.page}/plans/${encodeURIComponent(p.slug)}`,
                 };
-            }),
+            }))),
             join_url: u.page,
             joining_open: joiningOpen,
             price: sub ? { price_cents: sub.price_cents, period_days: sub.period_days, charged_by: 'OpenVibe.Billing' } : null,
             members: { count: members.count, shown: members.shown, stale: members.stale },
-            badge: { ...badge(c, list), svg_url: u.badge },
+            badge: { ...await badge(c, list), svg_url: u.badge },
             widget_url: u.widget,
             card_url: u.card,
         };

@@ -24,7 +24,7 @@ const KIND = 'channel_subscription';
 
 function createEntitlements({ db, now, config, billing, outbox, memberships, plans, log = console }) {
     const { maxAgeMs, graceMs } = config.projection;
-    const getRow = (member, creator, kind = KIND) => db.prepare('SELECT * FROM vip_entitlement_projection WHERE member_subject = ? AND creator_subject = ? AND kind = ?').get(member, creator, kind) || null;
+    const getRow = async (member, creator, kind = KIND) => await db.prepare('SELECT * FROM vip_entitlement_projection WHERE member_subject = ? AND creator_subject = ? AND kind = ?').get(member, creator, kind) || null;
 
     function validUntil(at, active, expiresAt) {
         const cap = at + maxAgeMs;
@@ -33,8 +33,8 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
         return Number.isFinite(end) ? Math.min(cap, end) : at;
     }
 
-    function emitChanged(row, prev, { reason, membership }, traceparent) {
-        const v = membership && membership.plan_version_id ? plans.version(membership.plan_version_id) : null;
+    async function emitChanged(row, prev, { reason, membership }, traceparent) {
+        const v = membership && membership.plan_version_id ? await plans.version(membership.plan_version_id) : null;
         outbox.emit('vip.membership.changed', { type: 'membership', id: `${row.member_subject}:${row.creator_subject}` }, {
             member: userRef(row.member_subject), creator: userRef(row.creator_subject), kind: row.kind,
             active: !!row.active, expires_at: row.expires_at, cancel_at_period_end: !!row.cancel_at_period_end,
@@ -52,14 +52,14 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
      *          subscriptionStatus?, reason, source: 'event'|'billing_check'|'import', eventId?, asOf (ms),
      *          origin?, checkoutId?, traceparent? }
      */
-    function apply(input) {
-        return db.transaction(() => {
+    async function apply(input) {
+        return await db.tx(async () => {
             const kind = input.kind || KIND;
-            const prev = getRow(input.member, input.creator, kind);
+            const prev = await getRow(input.member, input.creator, kind);
             const at = now();
             if (prev && input.asOf < prev.billing_as_of) {
                 if (!input.active && prev.active) {
-                    db.prepare('UPDATE vip_entitlement_projection SET valid_until = 0 WHERE member_subject = ? AND creator_subject = ? AND kind = ?').run(input.member, input.creator, kind);
+                    await db.prepare('UPDATE vip_entitlement_projection SET valid_until = 0 WHERE member_subject = ? AND creator_subject = ? AND kind = ?').run(input.member, input.creator, kind);
                     return { outcome: 'doubt', changed: false };
                 }
                 return { outcome: 'stale_ignored', changed: false };
@@ -74,7 +74,7 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
                 billing_as_of: input.asOf, synced_at: at, valid_until: validUntil(at, input.active, input.expiresAt),
                 last_used_at: prev ? prev.last_used_at : null,
             };
-            db.prepare(`INSERT INTO vip_entitlement_projection (member_subject, creator_subject, kind, active, expires_at, cancel_at_period_end, subscription_id,
+            await db.prepare(`INSERT INTO vip_entitlement_projection (member_subject, creator_subject, kind, active, expires_at, cancel_at_period_end, subscription_id,
                     subscription_status, source, last_reason, billing_event_id, billing_as_of, synced_at, valid_until, last_used_at)
                 VALUES (@member_subject, @creator_subject, @kind, @active, @expires_at, @cancel_at_period_end, @subscription_id, @subscription_status,
                     @source, @last_reason, @billing_event_id, @billing_as_of, @synced_at, @valid_until, @last_used_at)
@@ -83,43 +83,43 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
                     subscription_status = excluded.subscription_status, source = excluded.source, last_reason = excluded.last_reason,
                     billing_event_id = excluded.billing_event_id, billing_as_of = excluded.billing_as_of, synced_at = excluded.synced_at,
                     valid_until = excluded.valid_until`).run(next);
-            const { membership } = memberships.onProjection({ prev, next, reason: input.reason, origin: input.origin, checkoutId: input.checkoutId });
+            const { membership } = await memberships.onProjection({ prev, next, reason: input.reason, origin: input.origin, checkoutId: input.checkoutId });
             // A first look that finds no membership is not a change anyone needs to hear about.
             const changed = prev
                 ? (!!prev.active !== !!next.active || prev.expires_at !== next.expires_at || !!prev.cancel_at_period_end !== !!next.cancel_at_period_end)
                 : !!next.active;
-            if (changed) emitChanged(next, prev, { reason: input.reason, membership }, input.traceparent);
-            return { outcome: changed ? 'changed' : 'unchanged', changed, row: getRow(input.member, input.creator, kind), membership };
-        })();
+            if (changed) await emitChanged(next, prev, { reason: input.reason, membership }, input.traceparent);
+            return { outcome: changed ? 'changed' : 'unchanged', changed, row: await getRow(input.member, input.creator, kind), membership };
+        });
     }
 
     /** A cancellation scheduled at Billing: the period still runs; only the flag changes. */
-    function applyCanceled({ member, creator, subscriptionId, subscriptionStatus, currentPeriodEnd, eventId, asOf, traceparent, source = 'event' }) {
-        return db.transaction(() => {
-            const prev = getRow(member, creator);
+    async function applyCanceled({ member, creator, subscriptionId, subscriptionStatus, currentPeriodEnd, eventId, asOf, traceparent, source = 'event' }) {
+        return await db.tx(async () => {
+            const prev = await getRow(member, creator);
             if (!prev) return { outcome: 'no_projection', changed: false };
             if (asOf < prev.billing_as_of) return { outcome: 'stale_ignored', changed: false };
             const active = subscriptionStatus === 'active' ? !!prev.active : false;
-            return apply({
+            return await apply({
                 member, creator, active, expiresAt: active ? (prev.expires_at || currentPeriodEnd) : prev.expires_at, cancelAtPeriodEnd: true,
                 subscriptionId, subscriptionStatus, reason: 'cancel_scheduled', source, eventId, asOf, traceparent,
             });
-        })();
+        });
     }
 
     /** Something happened that Billing will describe in detail (a refund): stop trusting the row. */
-    function doubt(member, creator, kind = KIND) {
-        return db.prepare('UPDATE vip_entitlement_projection SET valid_until = 0 WHERE member_subject = ? AND creator_subject = ? AND kind = ?').run(member, creator, kind).changes > 0;
+    async function doubt(member, creator, kind = KIND) {
+        return (await db.prepare('UPDATE vip_entitlement_projection SET valid_until = 0 WHERE member_subject = ? AND creator_subject = ? AND kind = ?').run(member, creator, kind)).changes > 0;
     }
 
-    function answer(row, source, { stale = false, membership } = {}) {
+    async function answer(row, source, { stale = false, membership } = {}) {
         const t = now();
         const active = !!row.active && !!row.expires_at && Date.parse(row.expires_at) > t;
         return {
             member: userRef(row.member_subject), creator: userRef(row.creator_subject), kind: row.kind,
             status: active ? 'active' : 'inactive', active, expires_at: row.expires_at, cancel_at_period_end: !!row.cancel_at_period_end,
             source, stale, valid_until: iso(Math.max(0, row.valid_until)), checked_at: iso(t),
-            membership: membership ? memberships.present(membership) : null,
+            membership: membership ? await memberships.present(membership) : null,
         };
     }
     function unknown(member, creator, reason) {
@@ -129,8 +129,8 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
         };
     }
 
-    const membershipOf = (member, creatorSubject) => {
-        const row = db.prepare('SELECT m.* FROM vip_memberships m JOIN vip_creators c ON c.id = m.creator_id WHERE m.member_subject = ? AND c.subject = ?').get(member, creatorSubject);
+    const membershipOf = async (member, creatorSubject) => {
+        const row = await db.prepare('SELECT m.* FROM vip_memberships m JOIN vip_creators c ON c.id = m.creator_id WHERE m.member_subject = ? AND c.subject = ?').get(member, creatorSubject);
         return row || null;
     };
 
@@ -138,12 +138,12 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
     async function authoritative(member, creator, { traceparent } = {}) {
         const e = await billing.entitlement(member, creator);
         const sub = e && e.subscription;
-        const out = apply({
+        const out = await apply({
             member, creator, active: !!(e && e.active), expiresAt: (e && e.expires_at) || null,
             cancelAtPeriodEnd: sub ? !!sub.cancel_at_period_end : undefined, subscriptionId: sub ? sub.id : undefined,
             subscriptionStatus: sub ? sub.status : undefined, reason: 'checked', source: 'billing_check', asOf: now(), traceparent,
         });
-        return out.row || getRow(member, creator);
+        return out.row || await getRow(member, creator);
     }
 
     /**
@@ -153,22 +153,22 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
     async function check(member, creator, { mode = 'auto', traceparent } = {}) {
         if (member === creator) return { ...unknown(member, creator, 'self'), status: 'inactive', reason: 'a creator is not a member of their own plans' };
         const t = now();
-        let row = getRow(member, creator);
-        if (row) db.prepare('UPDATE vip_entitlement_projection SET last_used_at = ? WHERE member_subject = ? AND creator_subject = ? AND kind = ?').run(t, member, creator, KIND);
+        let row = await getRow(member, creator);
+        if (row) await db.prepare('UPDATE vip_entitlement_projection SET last_used_at = ? WHERE member_subject = ? AND creator_subject = ? AND kind = ?').run(t, member, creator, KIND);
         const fresh = row && t <= row.valid_until;
         const withinGrace = row && t <= row.valid_until + graceMs;
         if (mode === 'projection') {
-            if (fresh) return answer(row, 'projection', { membership: membershipOf(member, creator) });
-            if (withinGrace) return answer(row, 'projection', { stale: true, membership: membershipOf(member, creator) });
+            if (fresh) return await answer(row, 'projection', { membership: await membershipOf(member, creator) });
+            if (withinGrace) return await answer(row, 'projection', { stale: true, membership: await membershipOf(member, creator) });
             return unknown(member, creator, row ? 'projection_expired' : 'no_projection');
         }
-        if (mode === 'auto' && fresh) return answer(row, 'projection', { membership: membershipOf(member, creator) });
+        if (mode === 'auto' && fresh) return await answer(row, 'projection', { membership: await membershipOf(member, creator) });
         try {
             row = await authoritative(member, creator, { traceparent });
-            return answer(row, 'billing', { membership: membershipOf(member, creator) });
+            return await answer(row, 'billing', { membership: await membershipOf(member, creator) });
         } catch (err) {
             log.warn(`[VIP] authoritative entitlement check failed (${member} → ${creator}): ${err.message}`);
-            if (mode === 'auto' && withinGrace) return { ...answer(row, 'projection', { stale: true, membership: membershipOf(member, creator) }), reason: 'billing_unavailable' };
+            if (mode === 'auto' && withinGrace) return { ...await answer(row, 'projection', { stale: true, membership: await membershipOf(member, creator) }), reason: 'billing_unavailable' };
             return unknown(member, creator, 'billing_unavailable');
         }
     }
@@ -179,7 +179,7 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
      */
     async function refreshDue({ limit = 50 } = {}) {
         const t = now();
-        const rows = db.prepare(`SELECT member_subject, creator_subject FROM vip_entitlement_projection
+        const rows = await db.prepare(`SELECT member_subject, creator_subject FROM vip_entitlement_projection
             WHERE kind = ? AND last_used_at >= ? AND valid_until <= ? ORDER BY valid_until LIMIT ?`).all(KIND, t - 3600_000, t + 120_000, limit);
         let ok = 0; let failed = 0;
         for (const r of rows) {
@@ -189,9 +189,9 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
     }
 
     /** Members of a creator according to the projection (fresh rows only; never past valid_until). */
-    function projectedMembers(creator) {
+    async function projectedMembers(creator) {
         const t = now();
-        return db.prepare(`SELECT * FROM vip_entitlement_projection WHERE creator_subject = ? AND kind = ? AND active = 1 AND valid_until >= ? AND expires_at > ?
+        return await db.prepare(`SELECT * FROM vip_entitlement_projection WHERE creator_subject = ? AND kind = ? AND active = 1 AND valid_until >= ? AND expires_at > ?
             ORDER BY expires_at DESC`).all(creator, KIND, t, iso(t));
     }
 

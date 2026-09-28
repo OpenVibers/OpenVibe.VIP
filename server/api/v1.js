@@ -47,36 +47,36 @@ function v1Router({ domain, apiAuth, limits }) {
     const needAuth = (p) => { if (p.kind === 'anonymous') fail(401, 'auth.required', 'a Network service or user token is required'); };
 
     /** A creator named by SubjectRef, usr_ id, username or 'network'. */
-    function findCreator(ref) {
-        if (ref === 'network') return creators.network();
-        if (ref && typeof ref === 'object') return creators.bySubject(userSubject(ref, 'creator'));
+    async function findCreator(ref) {
+        if (ref === 'network') return await creators.network();
+        if (ref && typeof ref === 'object') return await creators.bySubject(userSubject(ref, 'creator'));
         const s = String(ref || '');
-        if (isUserSubject(s)) return creators.bySubject(s);
-        return creators.byUsername(s);
+        if (isUserSubject(s)) return await creators.bySubject(s);
+        return await creators.byUsername(s);
     }
 
     /**
      * The creator a write acts for. Users: themselves (created on first use), or `network` for staff.
      * Services (holding `cap`): the creator named in the body.
      */
-    function actingCreator(req, ref, cap) {
+    async function actingCreator(req, ref, cap) {
         const p = req.principal;
         needAuth(p);
         if (p.kind === 'service') {
             if (!granted(p, cap)) denied(cap);
-            if (ref === 'network') return creators.network();
+            if (ref === 'network') return await creators.network();
             if (!ref) fail(422, 'vip.invalid_input', 'creator is required ({ type: "user", id } or "network")');
-            return creators.ensure({ subject: userSubject(ref, 'creator'), origin: 'service' });
+            return await creators.ensure({ subject: userSubject(ref, 'creator'), origin: 'service' });
         }
         if (ref === 'network') {
             if (!isStaff(p)) denied();
-            return creators.network();
+            return await creators.network();
         }
         if (ref && (typeof ref === 'object' ? ref.id : ref) !== p.subject) {
             if (!isStaff(p)) fail(403, 'vip.not_yours', 'you can only manage your own plans');
-            return creators.ensure({ subject: userSubject(ref, 'creator'), origin: 'staff' });
+            return await creators.ensure({ subject: userSubject(ref, 'creator'), origin: 'staff' });
         }
-        return creators.ensure({ subject: p.subject, username: p.username, displayName: p.name, origin: 'self' });
+        return await creators.ensure({ subject: p.subject, username: p.username, displayName: p.name, origin: 'self' });
     }
 
     /** May the principal manage things owned by creator row `c`? */
@@ -100,104 +100,104 @@ function v1Router({ domain, apiAuth, limits }) {
         return userSubject(value, 'subject');
     }
 
-    const presentPlanFull = (plan) => ({ ...plans.present(plan), creator: creators.present(creators.byId(plan.creator_id)) });
+    const presentPlanFull = async (plan) => ({ ...await plans.present(plan), creator: creators.present(await creators.byId(plan.creator_id)) });
     const trace = (req) => req.ov && req.ov.traceparent;
 
     // ── Creators (public) ────────────────────────────────────
-    r.get('/creators/:ref', wrap((req, res) => {
-        const c = findCreator(req.params.ref);
+    r.get('/creators/:ref', wrap(async (req, res) => {
+        const c = await findCreator(req.params.ref);
         if (!c) fail(404, 'vip.creator_not_found', 'no such creator');
         const own = mayManage(req.principal, c, CAP.planList);
         res.json({
             creator: creators.present(c),
-            plans: plans.list({ creatorId: c.id, includeDrafts: own }).map((p) => plans.present(p)),
-            perks: perks.list({ creatorId: c.id, includeNetwork: false }).map((p) => perks.present(p)),
+            plans: (await Promise.all((await plans.list({ creatorId: c.id, includeDrafts: own })).map(async (p) => await plans.present(p)))),
+            perks: (await Promise.all((await perks.list({ creatorId: c.id, includeNetwork: false })).map(async (p) => await perks.present(p)))),
         });
     }));
 
     /** The public membership card (server/domain/cards.js): what /embed/:username/card.json serves. */
     r.get('/creators/:ref/card', wrap(async (req, res) => {
-        const card = await domain.cards.card(findCreator(req.params.ref));
+        const card = await domain.cards.card(await findCreator(req.params.ref));
         if (!card) fail(404, 'vip.creator_not_found', 'no public membership card for this creator');
         res.json({ card });
     }));
 
     // ── Plans ────────────────────────────────────────────────
-    r.get('/plans', wrap((req, res) => {
-        const c = findCreator(req.query.creator);
+    r.get('/plans', wrap(async (req, res) => {
+        const c = await findCreator(req.query.creator);
         if (!c) fail(404, 'vip.creator_not_found', 'creator must name a creator (usr_ id, username or network)');
         const include = String(req.query.include || '').split(',');
         const own = mayManage(req.principal, c, CAP.planList);
-        const list = plans.list({ creatorId: c.id, includeDrafts: own && include.includes('drafts'), includeArchived: own && include.includes('archived') });
-        res.json({ creator: creators.present(c), plans: list.map((p) => plans.present(p)) });
+        const list = await plans.list({ creatorId: c.id, includeDrafts: own && include.includes('drafts'), includeArchived: own && include.includes('archived') });
+        res.json({ creator: creators.present(c), plans: (await Promise.all(list.map(async (p) => await plans.present(p)))) });
     }));
-    const visiblePlan = (req, id) => {
-        const plan = plans.byId(id);
+    const visiblePlan = async (req, id) => {
+        const plan = await plans.byId(id);
         if (!plan) fail(404, 'vip.plan_not_found', `no plan ${id}`);
-        if (plan.status !== 'published' && !mayManage(req.principal, creators.byId(plan.creator_id), CAP.planList)) fail(404, 'vip.plan_not_found', `no plan ${id}`);
+        if (plan.status !== 'published' && !mayManage(req.principal, await creators.byId(plan.creator_id), CAP.planList)) fail(404, 'vip.plan_not_found', `no plan ${id}`);
         return plan;
     };
-    r.get('/plans/:id', wrap((req, res) => res.json({ plan: presentPlanFull(visiblePlan(req, req.params.id)) })));
-    r.get('/plans/:id/versions', wrap((req, res) => {
-        const plan = visiblePlan(req, req.params.id);
-        const own = mayManage(req.principal, creators.byId(plan.creator_id), CAP.planList);
-        const all = plans.versions(plan.id).filter((v) => own || v.published_at).map(plans.presentVersion);
+    r.get('/plans/:id', wrap(async (req, res) => res.json({ plan: await presentPlanFull(await visiblePlan(req, req.params.id)) })));
+    r.get('/plans/:id/versions', wrap(async (req, res) => {
+        const plan = await visiblePlan(req, req.params.id);
+        const own = mayManage(req.principal, await creators.byId(plan.creator_id), CAP.planList);
+        const all = (await Promise.all((await plans.versions(plan.id)).filter((v) => own || v.published_at).map(plans.presentVersion)));
         res.json({ plan_id: plan.id, versions: all });
     }));
-    r.post('/plans', create, wrap((req, res) => {
+    r.post('/plans', create, wrap(async (req, res) => {
         const b = req.body || {};
-        const c = actingCreator(req, b.creator, CAP.planCreate);
+        const c = await actingCreator(req, b.creator, CAP.planCreate);
         const actor = req.principal.kind === 'service' ? req.principal.sub : req.principal.subject;
-        const plan = plans.create({
+        const plan = await plans.create({
             creatorId: c.id, slug: b.slug, name: b.name, description: b.description, benefits: b.benefits, perks: b.perks,
             billingKind: b.billing_kind, publish: bool(b.publish), changeNote: b.change_note, actor, traceparent: trace(req),
         });
-        res.status(201).json({ plan: presentPlanFull(plan) });
+        res.status(201).json({ plan: await presentPlanFull(plan) });
     }));
-    const managedPlan = (req, cap) => {
-        const plan = plans.byId(req.params.id);
+    const managedPlan = async (req, cap) => {
+        const plan = await plans.byId(req.params.id);
         if (!plan) fail(404, 'vip.plan_not_found', `no plan ${req.params.id}`);
-        requireManage(req, creators.byId(plan.creator_id), cap);
+        requireManage(req, await creators.byId(plan.creator_id), cap);
         return plan;
     };
-    r.patch('/plans/:id', edit, wrap((req, res) => {
-        const plan = managedPlan(req, CAP.planUpdate);
+    r.patch('/plans/:id', edit, wrap(async (req, res) => {
+        const plan = await managedPlan(req, CAP.planUpdate);
         const b = req.body || {};
         const actor = req.principal.kind === 'service' ? req.principal.sub : req.principal.subject;
-        const out = plans.update(plan.id, { name: b.name, description: b.description, benefits: b.benefits, perks: b.perks, changeNote: b.change_note, actor, traceparent: trace(req) });
-        res.json({ plan: presentPlanFull(out.plan), version: plans.presentVersion(out.version), unchanged: out.unchanged });
+        const out = await plans.update(plan.id, { name: b.name, description: b.description, benefits: b.benefits, perks: b.perks, changeNote: b.change_note, actor, traceparent: trace(req) });
+        res.json({ plan: await presentPlanFull(out.plan), version: await plans.presentVersion(out.version), unchanged: out.unchanged });
     }));
-    r.post('/plans/:id/publish', create, wrap((req, res) => {
-        const plan = managedPlan(req, CAP.planUpdate);
-        const out = plans.publish(plan.id, { traceparent: trace(req) });
-        res.json({ plan: presentPlanFull(out.plan), replay: out.replay });
+    r.post('/plans/:id/publish', create, wrap(async (req, res) => {
+        const plan = await managedPlan(req, CAP.planUpdate);
+        const out = await plans.publish(plan.id, { traceparent: trace(req) });
+        res.json({ plan: await presentPlanFull(out.plan), replay: out.replay });
     }));
-    r.post('/plans/:id/archive', create, wrap((req, res) => {
-        const plan = managedPlan(req, CAP.planArchive);
-        res.json({ plan: presentPlanFull(plans.archive(plan.id)) });
+    r.post('/plans/:id/archive', create, wrap(async (req, res) => {
+        const plan = await managedPlan(req, CAP.planArchive);
+        res.json({ plan: await presentPlanFull(await plans.archive(plan.id)) });
     }));
 
     // ── Perks ────────────────────────────────────────────────
-    r.get('/perks', wrap((req, res) => {
-        const c = findCreator(req.query.creator);
+    r.get('/perks', wrap(async (req, res) => {
+        const c = await findCreator(req.query.creator);
         if (!c) fail(404, 'vip.creator_not_found', 'creator must name a creator (usr_ id, username or network)');
         const own = mayManage(req.principal, c, CAP.perkList);
-        const list = perks.list({ creatorId: c.id, includeNetwork: bool(req.query.network, true), includeRetired: own && bool(req.query.retired) });
-        res.json({ perks: list.map((p) => perks.present(p)) });
+        const list = await perks.list({ creatorId: c.id, includeNetwork: bool(req.query.network, true), includeRetired: own && bool(req.query.retired) });
+        res.json({ perks: (await Promise.all(list.map(async (p) => await perks.present(p)))) });
     }));
-    r.post('/perks', create, wrap((req, res) => {
+    r.post('/perks', create, wrap(async (req, res) => {
         const b = req.body || {};
-        const c = actingCreator(req, b.creator, CAP.perkCreate);
+        const c = await actingCreator(req, b.creator, CAP.perkCreate);
         const actor = req.principal.kind === 'service' ? req.principal.sub : req.principal.subject;
-        const p = perks.create({ creatorId: c.id, key: b.key, name: b.name, description: b.description, kind: b.kind, bindings: b.bindings, actor });
-        res.status(201).json({ perk: perks.present(p) });
+        const p = await perks.create({ creatorId: c.id, key: b.key, name: b.name, description: b.description, kind: b.kind, bindings: b.bindings, actor });
+        res.status(201).json({ perk: await perks.present(p) });
     }));
-    r.patch('/perks/:id', edit, wrap((req, res) => {
-        const p = perks.byId(req.params.id);
+    r.patch('/perks/:id', edit, wrap(async (req, res) => {
+        const p = await perks.byId(req.params.id);
         if (!p) fail(404, 'vip.perk_not_found', `no perk ${req.params.id}`);
-        requireManage(req, creators.byId(p.creator_id), CAP.perkUpdate);
+        requireManage(req, await creators.byId(p.creator_id), CAP.perkUpdate);
         const b = req.body || {};
-        res.json({ perk: perks.present(perks.update(p.id, { name: b.name, description: b.description, kind: b.kind, status: b.status, bindings: b.bindings })) });
+        res.json({ perk: await perks.present(await perks.update(p.id, { name: b.name, description: b.description, kind: b.kind, status: b.status, bindings: b.bindings })) });
     }));
 
     // ── Checkout hand-off (Billing) ──────────────────────────
@@ -233,29 +233,29 @@ function v1Router({ domain, apiAuth, limits }) {
         const member = memberSubject(req, req.params.subject, CAP.status);
         const mode = ['projection', 'authoritative'].includes(req.query.mode) ? req.query.mode : 'auto';
         const list = [];
-        for (const m of memberships.forMember(member)) {
-            const c = creators.byId(m.creator_id);
+        for (const m of await memberships.forMember(member)) {
+            const c = await creators.byId(m.creator_id);
             const ent = c && c.subject ? await entitlements.check(member, c.subject, { mode, traceparent: trace(req) }) : null;
-            list.push({ ...memberships.present(m), creator: creators.present(c), entitlement: ent, preferences: memberships.preferences(member, m.creator_id) });
+            list.push({ ...await memberships.present(m), creator: creators.present(c), entitlement: ent, preferences: await memberships.preferences(member, m.creator_id) });
         }
         res.json({ member: { type: 'user', id: member }, memberships: list });
     }));
-    const creatorParam = (req) => {
-        const c = findCreator(req.params.creator);
+    const creatorParam = async (req) => {
+        const c = await findCreator(req.params.creator);
         if (!c || !c.subject) fail(404, 'vip.creator_not_found', 'no such creator');
         return c;
     };
     // Cancelling is handed to Billing: the member does it once.
     r.post('/memberships/:creator/cancel', limits('vip.membership.cancel', { minute: 5, hour: 30 }), wrap(async (req, res) => {
         if (req.principal.kind !== 'user') fail(403, 'vip.member_only', 'only the member can cancel their membership');
-        const c = creatorParam(req);
+        const c = await creatorParam(req);
         res.json(await checkout.cancel({ member: req.principal.subject, creatorId: c.id, traceparent: trace(req) }));
     }));
-    r.put('/memberships/:creator/preferences', edit, wrap((req, res) => {
+    r.put('/memberships/:creator/preferences', edit, wrap(async (req, res) => {
         if (req.principal.kind !== 'user') fail(403, 'vip.member_only', 'only the member sets their preferences');
-        const c = creatorParam(req);
+        const c = await creatorParam(req);
         const b = req.body || {};
-        res.json({ preferences: memberships.setPreferences(req.principal.subject, c.id, { showBadge: b.show_badge === undefined ? undefined : bool(b.show_badge), listed: b.listed === undefined ? undefined : bool(b.listed) }) });
+        res.json({ preferences: await memberships.setPreferences(req.principal.subject, c.id, { showBadge: b.show_badge === undefined ? undefined : bool(b.show_badge), listed: b.listed === undefined ? undefined : bool(b.listed) }) });
     }));
 
     // ── Entitlement check (projection + authoritative fallback) ──
@@ -266,7 +266,7 @@ function v1Router({ domain, apiAuth, limits }) {
         const raw = src.creator && typeof src.creator === 'object' ? src.creator.id : src.creator;
         let creatorSubject = isUserSubject(raw) ? raw : null;
         if (!creatorSubject) {
-            const c = findCreator(raw);
+            const c = await findCreator(raw);
             if (!c || !c.subject) fail(422, 'vip.invalid_input', 'creator must be a user SubjectRef, usr_ id or VIP username');
             creatorSubject = c.subject;
         }
@@ -278,9 +278,9 @@ function v1Router({ domain, apiAuth, limits }) {
             const product = String(src.product);
             if (!/^[a-z][a-z0-9-]{1,39}$/.test(product)) fail(422, 'vip.invalid_input', 'product must be a service id such as chat or blog');
             out.product = product;
-            out.product_perks = out.active ? perks.forMembership(out.membership, product) : [];
-            const c = creators.bySubject(creatorSubject);
-            out.preferences = c ? memberships.preferences(member, c.id) : { show_badge: true, listed: false };
+            out.product_perks = out.active ? await perks.forMembership(out.membership, product) : [];
+            const c = await creators.bySubject(creatorSubject);
+            out.preferences = c ? await memberships.preferences(member, c.id) : { show_badge: true, listed: false };
         }
         res.json(out);
     });
@@ -293,44 +293,44 @@ function v1Router({ domain, apiAuth, limits }) {
     r.post('/entitlements/check', entitlementLimit, entitlementCheck);
 
     // ── Gated-resource policy ────────────────────────────────
-    r.get('/policies', wrap((req, res) => {
+    r.get('/policies', wrap(async (req, res) => {
         const p = req.principal;
         needAuth(p);
         if (req.query.service || req.query.type || req.query.id) {
             const resource = entityRef({ service: req.query.service, type: req.query.type, id: req.query.id });
             // Rules are per creator: name the owner (services must; a person defaults to themselves).
-            const owner = req.query.owner ? policies.ownerCreator(req.query.owner === 'network' ? 'network' : String(req.query.owner))
-                : (p.kind === 'user' ? creators.bySubject(p.subject) : null);
+            const owner = req.query.owner ? await policies.ownerCreator(req.query.owner === 'network' ? 'network' : String(req.query.owner))
+                : (p.kind === 'user' ? await creators.bySubject(p.subject) : null);
             if (!req.query.owner && p.kind !== 'user') fail(422, 'vip.invalid_input', 'owner (the creator\'s usr_ id or network) is required');
-            const rule = owner ? policies.forResource(resource, owner.id) : null;
+            const rule = owner ? await policies.forResource(resource, owner.id) : null;
             if (p.kind === 'service' && !granted(p, CAP.policyGet)) denied(CAP.policyGet);
-            if (!rule || (p.kind === 'user' && !mayManage(p, creators.byId(rule.creator_id), CAP.policyGet))) fail(404, 'vip.rule_not_found', 'no rule for that resource');
-            return res.json({ rule: policies.present(rule) });
+            if (!rule || (p.kind === 'user' && !mayManage(p, await creators.byId(rule.creator_id), CAP.policyGet))) fail(404, 'vip.rule_not_found', 'no rule for that resource');
+            return res.json({ rule: await policies.present(rule) });
         }
-        const c = findCreator(req.query.creator || (p.kind === 'user' ? p.subject : null));
+        const c = await findCreator(req.query.creator || (p.kind === 'user' ? p.subject : null));
         if (!c) fail(404, 'vip.creator_not_found', 'no such creator');
         requireManage(req, c, CAP.policyGet);
-        return res.json({ rules: policies.list(c.id).map(policies.present) });
+        return res.json({ rules: await Promise.all((await policies.list(c.id)).map(policies.present)) });
     }));
-    r.get('/policies/:id', wrap((req, res) => {
-        const rule = policies.byId(req.params.id);
+    r.get('/policies/:id', wrap(async (req, res) => {
+        const rule = await policies.byId(req.params.id);
         if (!rule) fail(404, 'vip.rule_not_found', `no rule ${req.params.id}`);
-        requireManage(req, creators.byId(rule.creator_id), CAP.policyGet);
-        res.json({ rule: policies.present(rule) });
+        requireManage(req, await creators.byId(rule.creator_id), CAP.policyGet);
+        res.json({ rule: await policies.present(rule) });
     }));
-    r.post('/policies', edit, wrap((req, res) => {
+    r.post('/policies', edit, wrap(async (req, res) => {
         const b = req.body || {};
-        const c = actingCreator(req, b.creator, CAP.policySet);
+        const c = await actingCreator(req, b.creator, CAP.policySet);
         if (c.kind !== 'creator') fail(422, 'vip.invalid_input', 'gated resources belong to a creator');
         const actor = req.principal.kind === 'service' ? req.principal.sub : req.principal.subject;
-        const rule = policies.set({ creatorId: c.id, resource: b.resource, requirement: b.requirement, planId: b.plan_id, perkKey: b.perk_key, sensitive: bool(b.sensitive), actor });
-        res.status(201).json({ rule: policies.present(rule) });
+        const rule = await policies.set({ creatorId: c.id, resource: b.resource, requirement: b.requirement, planId: b.plan_id, perkKey: b.perk_key, sensitive: bool(b.sensitive), actor });
+        res.status(201).json({ rule: await policies.present(rule) });
     }));
-    r.delete('/policies/:id', edit, wrap((req, res) => {
-        const rule = policies.byId(req.params.id);
+    r.delete('/policies/:id', edit, wrap(async (req, res) => {
+        const rule = await policies.byId(req.params.id);
         if (!rule) fail(404, 'vip.rule_not_found', `no rule ${req.params.id}`);
-        requireManage(req, creators.byId(rule.creator_id), CAP.policySet);
-        res.json({ rule: policies.present(policies.disable(rule.id)) });
+        requireManage(req, await creators.byId(rule.creator_id), CAP.policySet);
+        res.json({ rule: await policies.present(await policies.disable(rule.id)) });
     }));
     // Evaluation is the gates' hot path too (see the entitlement check).
     r.post('/policies/evaluate', byKind(limits('vip.resource.policy.evaluate', { minute: 1200, hour: 30000 }), limits('vip.resource.policy.evaluate')), wrap(async (req, res) => {
@@ -353,22 +353,22 @@ function v1Router({ domain, apiAuth, limits }) {
 
     // ── Creator members ──────────────────────────────────────
     r.get('/creators/:ref/members', wrap(async (req, res) => {
-        const c = findCreator(req.params.ref);
+        const c = await findCreator(req.params.ref);
         if (!c || !c.subject) fail(404, 'vip.creator_not_found', 'no such creator');
         requireManage(req, c, CAP.members);
-        const byMember = new Map(memberships.forCreator(c.id).map((m) => [m.member_subject, m]));
-        const row = (subject, extra) => ({ member: { type: 'user', id: subject }, ...extra, membership: memberships.present(byMember.get(subject)) });
+        const byMember = new Map((await memberships.forCreator(c.id)).map((m) => [m.member_subject, m]));
+        const row = async (subject, extra) => ({ member: { type: 'user', id: subject }, ...extra, membership: await memberships.present(byMember.get(subject)) });
         try {
             // Authoritative: Billing's active subscriptions to this creator.
             const out = await billing.listSubscriptions({ streamer: c.subject, status: 'active' });
-            const members = (out.subscriptions || []).map((s) => row(s.subscriber.id, {
+            const members = (await Promise.all((out.subscriptions || []).map(async (s) => await row(s.subscriber.id, {
                 current_period_end: s.current_period_end, cancel_at_period_end: !!s.cancel_at_period_end, subscription_id: s.id,
-            }));
+            }))));
             return res.json({ creator: creators.present(c), source: 'billing', members });
         } catch {
-            const members = entitlements.projectedMembers(c.subject).map((pr) => row(pr.member_subject, {
+            const members = (await Promise.all((await entitlements.projectedMembers(c.subject)).map(async (pr) => await row(pr.member_subject, {
                 current_period_end: pr.expires_at, cancel_at_period_end: !!pr.cancel_at_period_end, subscription_id: pr.subscription_id,
-            }));
+            }))));
             return res.json({ creator: creators.present(c), source: 'projection', note: 'Billing did not answer; this list is VIP\'s projection (fresh rows only) and may be incomplete', members });
         }
     }));
@@ -378,9 +378,9 @@ function v1Router({ domain, apiAuth, limits }) {
 
 /** Async-safe handler: VipError → problem+json; anything else → 500. */
 function wrap(fn) {
-    return (req, res, next) => {
+    return async (req, res, next) => {
         try {
-            const p = fn(req, res, next);
+            const p = await fn(req, res, next);
             if (p && typeof p.catch === 'function') p.catch((e) => sendError(req, res, e));
         } catch (e) { sendError(req, res, e); }
     };

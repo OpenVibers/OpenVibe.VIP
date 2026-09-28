@@ -2,7 +2,7 @@
 Description=OpenVibe.VIP — memberships: plans, versioned terms, perks and gated-resource policy
 # Network signs the tokens VIP verifies (its key is fetched at boot and retried); Billing holds
 # the entitlement truth; Events relays the outbox when EVENTS_URL is set. VIP starts without any.
-After=network.target
+After=network.target postgresql.service pgbouncer.service valkey-server.service
 Wants=openvibe-network.service openvibe-billing.service
 
 [Service]

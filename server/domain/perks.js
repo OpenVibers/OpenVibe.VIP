@@ -15,8 +15,8 @@ const PRODUCT_RE = /^[a-z][a-z0-9-]{1,39}$/;
 const BINDING_RE = /^[a-z][a-z0-9_.]{1,63}$/;
 
 function createPerks({ db, now }) {
-    const byId = (id) => db.prepare('SELECT * FROM vip_perks WHERE id = ?').get(id) || null;
-    const byKey = (creatorId, key) => db.prepare('SELECT * FROM vip_perks WHERE creator_id = ? AND key = ?').get(creatorId, key) || null;
+    const byId = async (id) => await db.prepare('SELECT * FROM vip_perks WHERE id = ?').get(id) || null;
+    const byKey = async (creatorId, key) => await db.prepare('SELECT * FROM vip_perks WHERE creator_id = ? AND key = ?').get(creatorId, key) || null;
 
     function cleanBindings(list) {
         if (list == null) return null;
@@ -34,65 +34,65 @@ function createPerks({ db, now }) {
         });
     }
 
-    function setBindings(perkId, list) {
+    async function setBindings(perkId, list) {
         const at = iso(now());
         const keep = new Set(list.map((b) => `${b.product}:${b.binding}`));
-        for (const b of db.prepare("SELECT * FROM vip_product_bindings WHERE perk_id = ? AND status = 'active'").all(perkId)) {
-            if (!keep.has(`${b.product}:${b.binding}`)) db.prepare("UPDATE vip_product_bindings SET status = 'removed', updated_at = ? WHERE id = ?").run(at, b.id);
+        for (const b of await db.prepare("SELECT * FROM vip_product_bindings WHERE perk_id = ? AND status = 'active'").all(perkId)) {
+            if (!keep.has(`${b.product}:${b.binding}`)) await db.prepare("UPDATE vip_product_bindings SET status = 'removed', updated_at = ? WHERE id = ?").run(at, b.id);
         }
         const up = db.prepare(`INSERT INTO vip_product_bindings (id, perk_id, product, binding, config, status, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
             ON CONFLICT (perk_id, product, binding) DO UPDATE SET config = excluded.config, status = 'active', updated_at = excluded.updated_at`);
-        for (const b of list) up.run(prefixedId('vpb', now()), perkId, b.product, b.binding, JSON.stringify(b.config), at, at);
+        for (const b of list) await up.run(prefixedId('vpb', now()), perkId, b.product, b.binding, JSON.stringify(b.config), at, at);
     }
 
-    function create({ creatorId, key, name, description, kind = 'other', bindings = [], actor = null }) {
+    async function create({ creatorId, key, name, description, kind = 'other', bindings = [], actor = null }) {
         const k = slug(key || name, 'key');
-        if (byKey(creatorId, k)) fail(409, 'vip.perk_exists', `a perk with key ${k} already exists`);
+        if (await byKey(creatorId, k)) fail(409, 'vip.perk_exists', `a perk with key ${k} already exists`);
         if (!KINDS.includes(kind)) fail(422, 'vip.invalid_input', `kind must be one of ${KINDS.join(', ')}`);
         const clean = cleanBindings(bindings) || [];
         const at = iso(now());
         const id = prefixedId('vpk', now());
-        db.transaction(() => {
-            db.prepare(`INSERT INTO vip_perks (id, creator_id, key, name, description, kind, status, created_by, created_at, updated_at)
+        await db.tx(async () => {
+            await db.prepare(`INSERT INTO vip_perks (id, creator_id, key, name, description, kind, status, created_by, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`).run(id, creatorId, k, text(name, 'name', 80, { required: true }), text(description, 'description', 500), kind, actor, at, at);
-            setBindings(id, clean);
-        })();
-        return byId(id);
+            await setBindings(id, clean);
+        });
+        return await byId(id);
     }
 
-    function update(perkId, { name, description, kind, status, bindings }) {
-        const p = byId(perkId);
+    async function update(perkId, { name, description, kind, status, bindings }) {
+        const p = await byId(perkId);
         if (!p) fail(404, 'vip.perk_not_found', `no perk ${perkId}`);
         if (kind !== undefined && !KINDS.includes(kind)) fail(422, 'vip.invalid_input', `kind must be one of ${KINDS.join(', ')}`);
         if (status !== undefined && !['active', 'retired'].includes(status)) fail(422, 'vip.invalid_input', 'status must be active or retired');
         const clean = cleanBindings(bindings);
-        db.transaction(() => {
-            db.prepare('UPDATE vip_perks SET name = ?, description = ?, kind = ?, status = ?, updated_at = ? WHERE id = ?').run(
+        await db.tx(async () => {
+            await db.prepare('UPDATE vip_perks SET name = ?, description = ?, kind = ?, status = ?, updated_at = ? WHERE id = ?').run(
                 name !== undefined ? text(name, 'name', 80, { required: true }) : p.name,
                 description !== undefined ? text(description, 'description', 500) : p.description,
                 kind !== undefined ? kind : p.kind, status !== undefined ? status : p.status, iso(now()), perkId);
-            if (clean) setBindings(perkId, clean);
-        })();
-        return byId(perkId);
+            if (clean) await setBindings(perkId, clean);
+        });
+        return await byId(perkId);
     }
 
     /** Perks usable in a creator's plans: their own plus the network's. */
-    function list({ creatorId, includeNetwork = true, includeRetired = false }) {
+    async function list({ creatorId, includeNetwork = true, includeRetired = false }) {
         const owners = includeNetwork && creatorId !== 'network' ? [creatorId, 'network'] : [creatorId];
-        return db.prepare(`SELECT * FROM vip_perks WHERE creator_id IN (${owners.map(() => '?').join(',')}) ${includeRetired ? '' : "AND status = 'active'"}
-            ORDER BY creator_id = 'network', name COLLATE NOCASE`).all(...owners);
+        return await db.prepare(`SELECT * FROM vip_perks WHERE creator_id IN (${owners.map(() => '?').join(',')}) ${includeRetired ? '' : "AND status = 'active'"}
+            ORDER BY creator_id = 'network', lower(name)`).all(...owners);
     }
 
     /** Resolve perk ids or keys for a plan of creatorId: own or network perks, active only. */
-    function resolveForPlan(creatorId, refs) {
+    async function resolveForPlan(creatorId, refs) {
         if (refs == null) return null;
         if (!Array.isArray(refs) || refs.length > 30) fail(422, 'vip.invalid_input', 'perks must be a list of at most 30 perk ids or keys');
         const out = [];
         const seen = new Set();
         for (const r of refs) {
             const s = String(r || '');
-            let p = s.startsWith('vpk_') ? byId(s) : (byKey(creatorId, s) || byKey('network', s));
+            let p = s.startsWith('vpk_') ? await byId(s) : (await byKey(creatorId, s) || await byKey('network', s));
             if (p && p.creator_id !== creatorId && p.creator_id !== 'network') p = null;
             if (!p || p.status !== 'active') fail(422, 'vip.perk_not_found', `no active perk ${s} for this creator`);
             if (!seen.has(p.id)) { seen.add(p.id); out.push(p); }
@@ -100,7 +100,7 @@ function createPerks({ db, now }) {
         return out;
     }
 
-    const bindingsOf = (perkId) => db.prepare("SELECT * FROM vip_product_bindings WHERE perk_id = ? AND status = 'active' ORDER BY product, binding").all(perkId);
+    const bindingsOf = async (perkId) => await db.prepare("SELECT * FROM vip_product_bindings WHERE perk_id = ? AND status = 'active' ORDER BY product, binding").all(perkId);
 
     /**
      * The perks a presented membership's plan version grants, with their active bindings for one
@@ -108,24 +108,24 @@ function createPerks({ db, now }) {
      * binding are left out). The version's snapshot names the keys; a key resolves to the creator's
      * own perk first, then the network's.
      */
-    function forMembership(membership, product) {
+    async function forMembership(membership, product) {
         if (!membership || !Array.isArray(membership.perks) || !membership.perks.length) return [];
         const out = [];
         for (const key of membership.perks) {
-            const p = byKey(membership.creator_id, key) || byKey('network', key);
+            const p = await byKey(membership.creator_id, key) || await byKey('network', key);
             if (!p || p.status !== 'active') continue;
-            const bindings = bindingsOf(p.id).filter((b) => b.product === product).map((b) => ({ binding: b.binding, config: json(b.config, {}) }));
+            const bindings = (await bindingsOf(p.id)).filter((b) => b.product === product).map((b) => ({ binding: b.binding, config: json(b.config, {}) }));
             if (bindings.length) out.push({ key: p.key, name: p.name, kind: p.kind, scope: p.creator_id === 'network' ? 'network' : 'creator', bindings });
         }
         return out;
     }
 
-    function present(p, { withBindings = true } = {}) {
+    async function present(p, { withBindings = true } = {}) {
         if (!p) return null;
         return {
             id: p.id, key: p.key, name: p.name, description: p.description || null, kind: p.kind, status: p.status,
             scope: p.creator_id === 'network' ? 'network' : 'creator', creator_id: p.creator_id,
-            bindings: withBindings ? bindingsOf(p.id).map((b) => ({ product: b.product, binding: b.binding, config: json(b.config, {}) })) : undefined,
+            bindings: withBindings ? (await bindingsOf(p.id)).map((b) => ({ product: b.product, binding: b.binding, config: json(b.config, {}) })) : undefined,
             updated_at: p.updated_at,
         };
     }

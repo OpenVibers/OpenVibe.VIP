@@ -25,53 +25,53 @@
 const { fail, prefixedId, iso, entityRef, isUserSubject, text } = require('../util');
 
 function createPolicies({ db, now, creators, plans, perks, memberships, entitlements }) {
-    const byId = (id) => db.prepare('SELECT * FROM vip_gated_resource_rules WHERE id = ?').get(id) || null;
-    const forResource = (r, creatorId) => db.prepare(`SELECT * FROM vip_gated_resource_rules WHERE resource_service = ? AND resource_type = ? AND resource_id = ? AND creator_id = ? AND status = 'active'`)
+    const byId = async (id) => await db.prepare('SELECT * FROM vip_gated_resource_rules WHERE id = ?').get(id) || null;
+    const forResource = async (r, creatorId) => await db.prepare(`SELECT * FROM vip_gated_resource_rules WHERE resource_service = ? AND resource_type = ? AND resource_id = ? AND creator_id = ? AND status = 'active'`)
         .get(r.service, r.type, r.id, creatorId) || null;
     /** The creator a product names as a resource's owner: SubjectRef, usr_ id, or 'network'. */
-    function ownerCreator(owner) {
-        if (owner === 'network') return creators.network();
+    async function ownerCreator(owner) {
+        if (owner === 'network') return await creators.network();
         const s = owner && typeof owner === 'object' ? owner.id : owner;
-        return isUserSubject(String(s || '')) ? creators.bySubject(String(s)) : null;
+        return isUserSubject(String(s || '')) ? await creators.bySubject(String(s)) : null;
     }
 
     /** Create or replace the active rule for a resource. */
-    function set({ creatorId, resource, requirement = 'member', planId = null, perkKey = null, sensitive = false, actor = null }) {
-        const creator = creators.byId(creatorId);
+    async function set({ creatorId, resource, requirement = 'member', planId = null, perkKey = null, sensitive = false, actor = null }) {
+        const creator = await creators.byId(creatorId);
         if (!creator || creator.kind !== 'creator') fail(404, 'vip.creator_not_found', 'gated resources belong to a creator');
         const r = entityRef(resource);
         if (!['member', 'plan', 'perk'].includes(requirement)) fail(422, 'vip.invalid_input', 'requirement must be member, plan or perk');
         if (requirement === 'plan') {
-            const p = plans.byId(String(planId || ''));
+            const p = await plans.byId(String(planId || ''));
             if (!p || p.creator_id !== creatorId) fail(422, 'vip.plan_not_found', 'plan_id must be one of this creator\'s plans');
         } else planId = null;
         if (requirement === 'perk') {
             perkKey = text(perkKey, 'perk_key', 48, { required: true });
-            if (!perks.byKey(creatorId, perkKey) && !perks.byKey('network', perkKey)) fail(422, 'vip.perk_not_found', `no perk ${perkKey} for this creator`);
+            if (!await perks.byKey(creatorId, perkKey) && !await perks.byKey('network', perkKey)) fail(422, 'vip.perk_not_found', `no perk ${perkKey} for this creator`);
         } else perkKey = null;
-        const existing = forResource(r, creatorId);
+        const existing = await forResource(r, creatorId);
         const at = iso(now());
         const id = prefixedId('vgr', now());
-        db.transaction(() => {
-            if (existing) db.prepare("UPDATE vip_gated_resource_rules SET status = 'disabled', updated_at = ? WHERE id = ?").run(at, existing.id);
-            db.prepare(`INSERT INTO vip_gated_resource_rules (id, creator_id, resource_service, resource_type, resource_id, requirement, plan_id, perk_key, sensitive, status, created_by, created_at, updated_at)
+        await db.tx(async () => {
+            if (existing) await db.prepare("UPDATE vip_gated_resource_rules SET status = 'disabled', updated_at = ? WHERE id = ?").run(at, existing.id);
+            await db.prepare(`INSERT INTO vip_gated_resource_rules (id, creator_id, resource_service, resource_type, resource_id, requirement, plan_id, perk_key, sensitive, status, created_by, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`).run(id, creatorId, r.service, r.type, r.id, requirement, planId, perkKey, sensitive ? 1 : 0, actor, at, at);
-        })();
-        return byId(id);
+        });
+        return await byId(id);
     }
 
-    function disable(id) {
-        const rule = byId(id);
+    async function disable(id) {
+        const rule = await byId(id);
         if (!rule) fail(404, 'vip.rule_not_found', `no rule ${id}`);
-        db.prepare("UPDATE vip_gated_resource_rules SET status = 'disabled', updated_at = ? WHERE id = ?").run(iso(now()), id);
-        return byId(id);
+        await db.prepare("UPDATE vip_gated_resource_rules SET status = 'disabled', updated_at = ? WHERE id = ?").run(iso(now()), id);
+        return await byId(id);
     }
 
-    const list = (creatorId) => db.prepare("SELECT * FROM vip_gated_resource_rules WHERE creator_id = ? AND status = 'active' ORDER BY created_at DESC").all(creatorId);
+    const list = async (creatorId) => await db.prepare("SELECT * FROM vip_gated_resource_rules WHERE creator_id = ? AND status = 'active' ORDER BY created_at DESC").all(creatorId);
 
-    function present(rule) {
+    async function present(rule) {
         if (!rule) return null;
-        const c = creators.byId(rule.creator_id);
+        const c = await creators.byId(rule.creator_id);
         return {
             id: rule.id, creator: c && c.subject ? { type: 'user', id: c.subject } : null, creator_id: rule.creator_id,
             resource: { service: rule.resource_service, type: rule.resource_type, id: rule.resource_id },
@@ -94,10 +94,10 @@ function createPolicies({ db, now, creators, plans, perks, memberships, entitlem
     }
 
     /** The owner's active perks (own and network) that carry a product binding: the keys a member must hold. */
-    function boundPerkKeys(creatorId, { product, binding }) {
-        return perks.list({ creatorId, includeNetwork: true })
-            .filter((p) => perks.bindingsOf(p.id).some((b) => b.product === product && b.binding === binding))
-            .map((p) => p.key);
+    async function boundPerkKeys(creatorId, { product, binding }) {
+        const list = await perks.list({ creatorId, includeNetwork: true });
+        const bound = await Promise.all(list.map(async (p) => (await perks.bindingsOf(p.id)).some((b) => b.product === product && b.binding === binding)));
+        return list.filter((_, i) => bound[i]).map((p) => p.key);
     }
 
     /** evaluate() when the owner has no rule and the product passed its default gate. */
@@ -114,9 +114,9 @@ function createPolicies({ db, now, creators, plans, perks, memberships, entitlem
         if (ent.status === 'unknown') return deny('entitlement_unknown', { ...base, entitlement: ent });
         if (!ent.active) return deny('not_a_member', { ...base, entitlement: ent });
         if (fb.binding) {
-            const needed = boundPerkKeys(oc.id, fb.binding);
+            const needed = await boundPerkKeys(oc.id, fb.binding);
             if (needed.length) {
-                const held = memberships.perkKeys(memberships.get(subject, oc.id));
+                const held = await memberships.perkKeys(await memberships.get(subject, oc.id));
                 if (!needed.some((k) => held.includes(k))) return deny('perk_missing', { ...base, entitlement: ent });
             }
         }
@@ -134,35 +134,35 @@ function createPolicies({ db, now, creators, plans, perks, memberships, entitlem
         let fb;
         try { fb = cleanFallback(fallback); } catch { return deny('invalid_fallback'); }
         if (!owner) return deny('owner_required');
-        let oc = ownerCreator(owner);
+        let oc = await ownerCreator(owner);
         // A creator VIP has never seen can still hold Billing subscriptions: the default gate asks for them.
         if (!oc && fb && !ruleId && owner !== 'network') {
             const s = owner && typeof owner === 'object' ? owner.id : owner;
             if (isUserSubject(String(s || ''))) oc = { id: null, subject: String(s), status: 'active', kind: 'creator' };
         }
         if (!oc) return deny('no_rule');
-        const rule = ruleId ? byId(String(ruleId)) : (oc.id ? forResource(r, oc.id) : null);
-        if (!rule && fb && !ruleId) return evaluateFallback({ subject, oc, fb, mode, traceparent });
+        const rule = ruleId ? await byId(String(ruleId)) : (oc.id ? await forResource(r, oc.id) : null);
+        if (!rule && fb && !ruleId) return await evaluateFallback({ subject, oc, fb, mode, traceparent });
         if (!rule) return deny('no_rule');
-        if (ruleId && (rule.resource_service !== r.service || rule.resource_type !== r.type || rule.resource_id !== r.id)) return deny('rule_mismatch', { rule: present(rule) });
-        if (rule.creator_id !== oc.id) return deny('owner_mismatch', { rule: present(rule) });
-        if (rule.status !== 'active') return deny('rule_disabled', { rule: present(rule) });
-        const creator = creators.byId(rule.creator_id);
-        if (!creator || creator.status !== 'active' || !creator.subject) return deny('creator_unavailable', { rule: present(rule) });
-        if (!subject) return deny('not_signed_in', { rule: present(rule) });
-        if (!isUserSubject(subject)) return deny('not_a_member', { rule: present(rule) });
+        if (ruleId && (rule.resource_service !== r.service || rule.resource_type !== r.type || rule.resource_id !== r.id)) return deny('rule_mismatch', { rule: await present(rule) });
+        if (rule.creator_id !== oc.id) return deny('owner_mismatch', { rule: await present(rule) });
+        if (rule.status !== 'active') return deny('rule_disabled', { rule: await present(rule) });
+        const creator = await creators.byId(rule.creator_id);
+        if (!creator || creator.status !== 'active' || !creator.subject) return deny('creator_unavailable', { rule: await present(rule) });
+        if (!subject) return deny('not_signed_in', { rule: await present(rule) });
+        if (!isUserSubject(subject)) return deny('not_a_member', { rule: await present(rule) });
         // The creator always sees their own gated resources.
-        if (subject === creator.subject) return { allow: true, reason: 'owner', rule: present(rule), entitlement: null };
+        if (subject === creator.subject) return { allow: true, reason: 'owner', rule: await present(rule), entitlement: null };
         let ent;
         try {
             ent = await entitlements.check(subject, creator.subject, { mode: rule.sensitive ? 'authoritative' : (mode === 'authoritative' ? 'authoritative' : 'auto'), traceparent });
-        } catch { return deny('entitlement_unknown', { rule: present(rule) }); }
-        if (ent.status === 'unknown') return deny('entitlement_unknown', { rule: present(rule), entitlement: ent });
-        if (!ent.active) return deny('not_a_member', { rule: present(rule), entitlement: ent });
-        const m = memberships.get(subject, creator.id);
-        if (rule.requirement === 'plan' && (!m || m.plan_id !== rule.plan_id)) return deny('plan_required', { rule: present(rule), entitlement: ent });
-        if (rule.requirement === 'perk' && !memberships.perkKeys(m).includes(rule.perk_key)) return deny('perk_missing', { rule: present(rule), entitlement: ent });
-        return { allow: true, reason: 'member', rule: present(rule), entitlement: ent };
+        } catch { return deny('entitlement_unknown', { rule: await present(rule) }); }
+        if (ent.status === 'unknown') return deny('entitlement_unknown', { rule: await present(rule), entitlement: ent });
+        if (!ent.active) return deny('not_a_member', { rule: await present(rule), entitlement: ent });
+        const m = await memberships.get(subject, creator.id);
+        if (rule.requirement === 'plan' && (!m || m.plan_id !== rule.plan_id)) return deny('plan_required', { rule: await present(rule), entitlement: ent });
+        if (rule.requirement === 'perk' && !(await memberships.perkKeys(m)).includes(rule.perk_key)) return deny('perk_missing', { rule: await present(rule), entitlement: ent });
+        return { allow: true, reason: 'member', rule: await present(rule), entitlement: ent };
     }
 
     return { byId, forResource, ownerCreator, set, disable, list, present, evaluate };
