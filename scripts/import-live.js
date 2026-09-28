@@ -34,7 +34,7 @@ async function main() {
     for (const p of [livePath, opt('billing-db')].filter(Boolean)) if (path.resolve(p) === path.resolve(config.dbPath)) throw new Error(`${p} is the VIP database`);
     const live = new Database(livePath, { readonly: true, fileMustExist: true });
     const bdb = opt('billing-db') ? new Database(opt('billing-db'), { readonly: true, fileMustExist: true }) : null;
-    const db = openDb(config.dbPath);
+    const db = await openDb(config);   // PostgreSQL (ADR-035): DATABASE_URL, or the development PGlite
     const billing = createBillingClient(config);
     const outbox = createVipOutbox({ db, config });
     const domain = createDomain({ db, config, outbox, billing });
