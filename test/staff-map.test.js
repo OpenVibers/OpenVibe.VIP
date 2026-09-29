@@ -12,7 +12,7 @@ for (const [claims, want] of [[{"role": "user"}, [false]], [{"role": "global_mod
 }
 
 // Not staff decisions (display reads, an entity's own roles), allowed by file and snippet.
-const ALLOW = [["server/importer/live.js", "CREATOR_ROLES.includes(u.role)"]];
+const ALLOW = [];
 const offenders = [];
 (function walk(dir) {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

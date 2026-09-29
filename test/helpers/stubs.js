@@ -3,7 +3,7 @@
  * Stand-ins for the services VIP talks to, each on a random port with a real RS256 key pair.
  *
  *   startNetwork()        JWKS, client-credentials token endpoint (scope → cap), user JWTs
- *                         (signUser), resolve-batch for the importer
+ *                         (signUser)
  *   startBilling(net, clock)  the parts of OpenVibe.Billing VIP uses — intents, credit subscriptions,
  *                         cancel, subscriptions list/get, entitlements, rates, health — with
  *                         Billing's rules that matter here (service token audience + capability,
@@ -30,9 +30,7 @@ async function startNetwork() {
     const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
     const publicPem = publicKey.export({ type: 'spki', format: 'pem' });
     const privatePem = privateKey.export({ type: 'pkcs8', format: 'pem' });
-    const legacy = {};
     const grants = [];
-    const state = { resolveDown: false };
     let issuer = 'http://network.test';
     let n = 0;
 
@@ -44,12 +42,10 @@ async function startNetwork() {
         return jwt.sign({ sub: String(++n), subject_id: u.subject, username: u.username, display_name: u.display_name || u.username, role: u.role || 'user' },
             privatePem, { algorithm: 'RS256', issuer, expiresIn: '1h' });
     }
-    function newUser(username, { liveId = null, role = 'user' } = {}) {
+    function newUser(username, { role = 'user' } = {}) {
         const subject = ids.newId('user');
-        if (liveId != null) legacy[String(liveId)] = { subject, username };
         return { subject, username, display_name: username[0].toUpperCase() + username.slice(1), role };
     }
-    function mapLive(liveId, username) { const subject = ids.newId('user'); legacy[String(liveId)] = { subject, username }; return subject; }
 
     const server = http.createServer(async (req, res) => {
         const raw = await readBody(req);
@@ -61,24 +57,11 @@ async function startNetwork() {
             const cap = String(body.scope || '').split(/\s+/).filter(Boolean);
             return send(res, 200, { access_token: signService({ sub: `svc:${body.client_id}`, aud: [body.audience], cap }), token_type: 'Bearer', expires_in: 300 });
         }
-        if (req.url === '/internal/identity/resolve-batch' && req.method === 'POST') {
-            const v = serviceAuth.verifyServiceToken(String(req.headers.authorization || '').slice(7), { publicKey: publicPem, issuer, audience: 'openvibe.network' });
-            if (!v.ok) return send(res, 401, { code: v.code });
-            if (!(v.claims.cap || []).includes('identity.subject.resolve')) return send(res, 403, { code: 'capability.denied' });
-            if (state.resolveDown) return send(res, 503, { error: 'down' });
-            const body = JSON.parse(raw || '{}');
-            const results = {};
-            for (const id of body.ids || []) {
-                const s = body.system === 'live' ? legacy[String(id)] : null;
-                results[String(id)] = s ? { subject: { type: 'user', id: s.subject }, username: s.username } : null;
-            }
-            return send(res, 200, { results });
-        }
         send(res, 404, { error: 'not found' });
     });
     const url = await listen(server);
     issuer = url;
-    return { url, publicPem, signService, signUser, newUser, mapLive, legacy, grants, state, close: () => new Promise((r) => server.close(r)) };
+    return { url, publicPem, signService, signUser, newUser, grants, close: () => new Promise((r) => server.close(r)) };
 }
 
 /**

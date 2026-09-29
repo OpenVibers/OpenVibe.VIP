@@ -8,8 +8,6 @@
  *   t.page(path, { user, method, form })                    an SSR page (cookie session), form posts
  *   t.clock.advance(ms)
  */
-const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const http = require('http');
 const { signDelivery, signDeliveryHeaders } = require('openvibe-sdk/events');
@@ -22,10 +20,8 @@ async function boot(opts = {}) {
     const clock = { t: Date.now(), now() { return this.t; }, advance(ms) { this.t += ms; } };
     clock.now = clock.now.bind(clock);
     const billing = await startBilling(network, clock);
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vip-test-'));
     const env = {
         NODE_ENV: 'test',
-        VIP_DB_PATH: path.join(dir, 'vip.db'),
         BASE_URL: 'http://vip.test',
         OV_NETWORK_URL: network.url,
         OV_NETWORK_INTERNAL_URL: network.url,
@@ -97,7 +93,6 @@ async function boot(opts = {}) {
         await billing.close();
         await network.close();
         if (!opts.testdb) await testdb.close();   // a caller that handed its own database closes it
-        fs.rmSync(dir, { recursive: true, force: true });
     }
 
     return { app, base, config, domain, network, billing, clock, logs, call, deliver, deliverAll, page, csrf, outboxEvents, close, testdb, EVENTS_SECRET };

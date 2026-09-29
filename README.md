@@ -57,8 +57,7 @@ home that is not a cache.
 - **OpenVibe.Billing** — checkout (`billing.intent.create`), credit-paid periods and cancel
   (`billing.subscription.manage`), the authoritative check and subscription lists (`billing.entitlement.check`),
   and its events `billing.entitlement.changed`, `billing.subscription.canceled`, `billing.transaction.reversed`.
-- **OpenVibe.Network** — RS256 service and user tokens (JWKS), OAuth sign-in for the pages, identity
-  resolve (importer only).
+- **OpenVibe.Network** — RS256 service and user tokens (JWKS), OAuth sign-in for the pages.
 - **OpenVibe.Events** — delivery of Billing's events to `/internal/events`; relay of VIP's outbox.
 - **PostgreSQL 18 and Valkey 9** (OpenVibe.Host `roles/data/`, ADR-035): every read and write is async through `openvibe-sdk/db`; Valkey holds the per-actor limit counters (optional).
 - **openvibe-contracts** v0.76.0, **openvibe-sdk** v0.20.1 (outbox, inbox, delivery signatures, per-actor
@@ -80,7 +79,6 @@ Called elsewhere, as the service principal `vip`:
 |---|---|---|
 | OpenVibe.Billing | `billing.intent.create`, `billing.subscription.manage`, `billing.entitlement.check` | checkout, credit-paid periods and cancel, the authoritative check |
 | OpenVibe.Events | `events.event.publish`; `events.subscription.manage` once (`scripts/subscribe.js`) | the outbox relay; the three subscriptions for Billing's events |
-| OpenVibe.Network | `identity.subject.resolve` | the Live importer's creator mapping |
 
 ## Run it
 
@@ -90,11 +88,10 @@ cp .env.example .env                 # OV_OAUTH_CLIENT_SECRET, VIP_FORM_SECRET, 
 fnm exec --using=22.22.1 npm run dev # http://localhost:4620
 fnm exec --using=22.22.1 npm test    # every test/*.test.js: stub Network + Billing, temp DBs, random ports, injected clock
 node scripts/subscribe.js            # create the three Events subscriptions for Billing's events
-node scripts/import-live.js --live-db <live snapshot> [--billing-db <billing snapshot>] [--dry-run] [--json]
 ```
 
 Production (deployed, loopback only): `/opt/openvibe.vip`, env `/etc/openvibe/vip.env`, unit
-[deploy/systemd/openvibe-vip.service](deploy/systemd/openvibe-vip.service) (state in `/var/lib/openvibe-vip`).
+[deploy/systemd/openvibe-vip.service](deploy/systemd/openvibe-vip.service).
 The vhost [deploy/nginx/openvibe.vip.conf](deploy/nginx/openvibe.vip.conf) is not installed yet:
 `openvibe.vip` still serves the Sites placeholder. The three Events subscriptions exist.
 
@@ -300,28 +297,6 @@ widget to share and the member-count switch (`?as=network` for staff) · `/embed
 `<noscript>` navigation from openvibe-shared. Forms carry HMAC anti-forgery tokens
 (`VIP_FORM_SECRET`); cookies are SameSite=Lax. No feed: plans are not a publication stream.
 
-## Import from Live
-
-`scripts/import-live.js` reads a **read-only snapshot** of Live's database and reflects Live's
-current offering — every channel can be subscribed to monthly at the site-wide price, and a
-subscriber gets a star "Subscriber" badge (Live chat, the PowerChat overlay relay, the stream AI's
-context flag):
-
-1. the network perk `subscriber-badge` with those product bindings plus Chat's badge;
-2. a creator for every Live streamer (role streamer / global_mod / admin) or subscribed-to user,
-   resolved to a Network subject (unmapped users are **held**, never dropped);
-3. per creator, plan `channel-subscription` v1 "Channel subscription", published and sold as Billing's
-   `channel_subscription`, with the badge perk — or a link to the creator's own published plan;
-4. **memberships from Billing** (its subscriptions per creator via the API, or `--billing-db`
-   snapshot): each active one is filed under that v1 with a projection row; inactive ones are
-   recorded as excluded with the reason;
-5. every row of Live's `subscriptions` is reconciled: linked to the VIP membership or Billing
-   subscription for the pair, or held with the reason.
-
-Idempotent (keys in `vip_migration_maps`), never overwrites a creator's later edits, releases holds
-on a later run; `--dry-run` rolls everything back; exit 1 when Billing could not be read. Live's
-`sub_price_usd`/share/fee are reported for reference only — Billing prices.
-
 ## Before and after the Billing cutover
 
 Billing runs in shadow mode until the Wave 8 cutover (Live stays authoritative for money,
@@ -334,8 +309,7 @@ Billing runs in shadow mode until the Wave 8 cutover (Live stays authoritative f
   current as Billing's last import; new Live subscriptions do not reach Billing (or VIP) before the cutover;
 - Billing publishes its events only when its own `EVENTS_URL` is set.
 
-After the cutover: run `scripts/import-live.js` against the final Live snapshot (after Billing's
-final import), `scripts/subscribe.js`, then open checkout (`VIP_CHECKOUT_PROVIDERS=powerchat,credit`).
+After the cutover: run `scripts/subscribe.js`, then open checkout (`VIP_CHECKOUT_PROVIDERS=powerchat,credit`).
 
 ## Security notes
 
@@ -374,7 +348,6 @@ Reporting a vulnerability: [SECURITY.md](SECURITY.md).
 | a stale projection cannot authorize past `valid_until` (+ grace), even with Billing down for 100 days | `test/entitlements.test.js` |
 | authoritative fallback and sensitive checks | `test/entitlements.test.js`, `test/policies.test.js` |
 | gated-resource evaluation fails closed (no rule, unknown, perk missing, guest, VIP down in the client) | `test/policies.test.js` |
-| import idempotent, holds released, dry run keeps nothing, Billing outage reported | `test/import.test.js` |
 | VIP works with Live unavailable | no code path calls Live; every test runs without a Live stub |
 | a creator's membership card, badge and widget are public-data only, the same for everyone, embeddable and inert | `test/embeds.test.js` (published plans only, no subjects or binding configs, no cookie read or set, CORS, SVG escaping and sandbox, the widget's frame-ancestors and hashed style, the creator's member-count switch, Billing outage keeps the last count or shows none) |
 
@@ -389,10 +362,7 @@ Production deploys with `sudo ovhost deploy vip` on the host (strategy `git-chec
 fast-forward `/opt/openvibe.vip`, install on a lockfile change, restart, wait for `/api/ready`).
 The unit is `openvibe-vip.service` on `127.0.0.1:4620`, the env file `/etc/openvibe/vip.env`. The database is
 `ov_vip` on the host's data role (`sudo /opt/openvibe.host/roles/data/add-service.sh vip` writes its settings); the
-release migrates it at boot. The one-time move from SQLite is `scripts/migrate-to-postgres.js` (openvibe-sdk
-`runSqliteMigration`, with a `--pglite` rehearsal mode), run while the service is stopped; the old
-`/var/lib/openvibe-vip/vip.db` stays read-only for 7 days as the rollback. State lives in
-`/var/lib/openvibe-vip`. The vhost [deploy/nginx/openvibe.vip.conf](deploy/nginx/openvibe.vip.conf) waits
+release migrates it at boot. The vhost [deploy/nginx/openvibe.vip.conf](deploy/nginx/openvibe.vip.conf) waits
 for the launch: `openvibe.vip` serves the Sites placeholder.
 Rollback: ovhost puts the previous sha back by itself when `/api/ready` does not answer 2xx after the
 restart; afterwards `sudo ovhost rollback vip --to <sha>`. One blocker: `idx_vip_rules_resource` (one

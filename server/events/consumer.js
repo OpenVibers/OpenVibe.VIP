@@ -11,7 +11,7 @@
  *                                  projection in doubt at once (the next check asks Billing), even
  *                                  before — or without — the matching entitlement event
  *
- * Exactly once: the openvibe-sdk inbox claims (consumer, event_id) in the same SQLite transaction as
+ * Exactly once: the openvibe-sdk inbox claims (consumer, event_id) in the same PostgreSQL transaction as
  * the change. Order: rows remember the Billing time they reflect; see domain/entitlements.js.
  * The signature (X-OpenVibe-Signature, HMAC-SHA256 of the raw body with VIP_EVENTS_SECRET) is
  * verified with openvibe-sdk's parseDelivery. Only events whose source is `billing` are applied.

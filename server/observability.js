@@ -2,7 +2,7 @@
 /**
  * Track O: truthful readiness for GET /api/ready (openvibe-shared/ready).
  *
- *   db            required  a real query on VIP's SQLite (the schema is there and answers)
+ *   db            required  a real query on VIP's PostgreSQL (the schema is there and answers)
  *   network_jwks  optional  the Network signing key has loaded. Without it public plan pages still
  *                           render, but no service or user token can be verified (API calls and
  *                           sign-in answer 503), so it degrades rather than fails

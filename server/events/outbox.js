@@ -9,7 +9,7 @@
  *                            (granted, renewed, cancel scheduled, expired, refunded, …); payload
  *                            names the plan version the membership was bought under
  *
- * emit() runs inside the SQLite transaction that makes the change, so an event exists if and only
+ * emit() runs inside the PostgreSQL transaction that makes the change, so an event exists if and only
  * if its change committed. Envelopes are validated against events.event-envelope@1 first. The relay
  * publishes with VIP's service token (events.event.publish, audience openvibe.events) only when
  * EVENTS_URL and OV_OAUTH_CLIENT_SECRET are set; otherwise rows wait in event_outbox.

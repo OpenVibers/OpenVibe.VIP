@@ -5,7 +5,7 @@
  *
  * Plans are versioned. Terms (name, description, benefits, perks, the Billing product) live in
  * immutable vip_plan_versions rows; an edit ALWAYS creates version N+1 and never touches an earlier
- * row (SQLite triggers refuse it). A published plan's edit is published at once and becomes what new
+ * row (PostgreSQL triggers refuse it). A published plan's edit is published at once and becomes what new
  * members buy; members who joined earlier keep the version they bought (vip_memberships).
  *
  * Prices are not plan terms here: Billing prices and charges a subscription, and records what each

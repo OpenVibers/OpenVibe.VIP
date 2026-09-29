@@ -18,11 +18,8 @@ Environment=PATH=/usr/local/bin:/usr/bin:/bin
 ExecStart=/usr/bin/env node /opt/openvibe.vip/server/index.js
 Restart=always
 RestartSec=5
-# The VIP database lives in /var/lib/openvibe-vip (ADR-007: one database per service);
-# the code tree stays read-only.
-StateDirectory=openvibe-vip
-StateDirectoryMode=0700
-Environment=VIP_DB_PATH=/var/lib/openvibe-vip/vip.db
+# No local state: VIP's data lives in PostgreSQL on the host (ADR-007: one database per service,
+# ADR-035); the code tree stays read-only.
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
