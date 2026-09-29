@@ -49,7 +49,7 @@ function createVipReadiness({ db, keys, config, outbox, now, release = null, fet
             const t = now();
             const p = await db.prepare('SELECT COUNT(*) AS n, SUM(CASE WHEN valid_until < ? THEN 1 ELSE 0 END) AS stale FROM vip_entitlement_projection').get(t);
             return {
-                events: outbox.status(),
+                events: await outbox.status(),
                 billing_events_accepted: config.events.webhookSecrets.length > 0,
                 projection: { rows: p.n || 0, past_valid_until: p.stale || 0, max_age_ms: config.projection.maxAgeMs, grace_ms: config.projection.graceMs },
             };

@@ -63,7 +63,8 @@ function createVipOutbox({ db, config, fetchImpl, now = () => Date.now(), log = 
         start() { if (enabled) outbox.start(); },
         stop: () => outbox.stop(),
         kick() { if (enabled) outbox.kick(); },
-        status: () => ({ enabled, pending: outbox.pending(), rejected: outbox.rejected(), last_error: lastError }),
+        // pending()/rejected() are queries on PostgreSQL: awaited, or the health output serialized two Promises as {}.
+        status: async () => ({ enabled, pending: await outbox.pending(), rejected: await outbox.rejected(), last_error: lastError }),
     };
 }
 

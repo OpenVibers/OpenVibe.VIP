@@ -18,6 +18,7 @@ const { test, run } = harness('api');
     test('health, release and truthful readiness', async () => {
         const h = await t.call('GET', '/api/health', { token: null });
         assert.strictEqual(h.json.service, 'vip');
+        assert.strictEqual(typeof h.json.events.pending, 'number', 'outbox counts are numbers (an unawaited query serialized as {})');
         const rel = await t.call('GET', '/release.json', { token: null });
         assert.strictEqual(rel.json.service, 'vip');
         assert.deepStrictEqual(require('openvibe-contracts').validate('registry.release-manifest@1', rel.json).errors, []);

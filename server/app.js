@@ -87,7 +87,7 @@ async function createApp(opts = {}) {
     app.use('/embed', createEmbedRoutes({ domain, config }));
     app.use(cookieParser());
 
-    app.get('/api/health', (req, res) => res.json({ ok: true, service: 'vip', version: VERSION, release: release.release, events: outbox.status() }));
+    app.get('/api/health', async (req, res) => res.json({ ok: true, service: 'vip', version: VERSION, release: release.release, events: await outbox.status() }));
     // Valkey (ADR-035): shared, never-authoritative state (per-actor limit counters). Optional.
     const valkey = opts.valkey !== undefined ? opts.valkey : (config.valkey.url ? require('openvibe-sdk/valkey').createValkey({ url: config.valkey.url, prefix: config.valkey.prefix, log }) : null);
     const readiness = createVipReadiness({ db, keys, config, outbox, now, release: release.release, fetchImpl, valkey });
