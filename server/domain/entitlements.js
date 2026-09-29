@@ -35,14 +35,20 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
 
     async function emitChanged(row, prev, { reason, membership }, traceparent) {
         const v = membership && membership.plan_version_id ? await plans.version(membership.plan_version_id) : null;
-        await outbox.emit('vip.membership.changed', { type: 'membership', id: `${row.member_subject}:${row.creator_subject}` }, {
-            member: userRef(row.member_subject), creator: userRef(row.creator_subject), kind: row.kind,
-            active: !!row.active, expires_at: row.expires_at, cancel_at_period_end: !!row.cancel_at_period_end,
-            previous: prev ? { active: !!prev.active, expires_at: prev.expires_at, cancel_at_period_end: !!prev.cancel_at_period_end } : null,
-            reason: reason || null, source: row.source, billing_event_id: row.billing_event_id || null,
-            membership_id: membership ? membership.id : null, plan_id: membership ? membership.plan_id : null,
-            plan_version_id: membership ? membership.plan_version_id : null, plan_version: v ? v.version : null,
-            subscription_id: row.subscription_id || null,
+        await outbox.emit({
+            event_type: 'vip.membership.changed',
+            actor: { type: 'service', id: 'vip' },
+            subject: { type: 'membership', id: `${row.member_subject}:${row.creator_subject}` },
+            visibility: 'internal', priority: 'important',
+            payload: {
+                member: userRef(row.member_subject), creator: userRef(row.creator_subject), kind: row.kind,
+                active: !!row.active, expires_at: row.expires_at, cancel_at_period_end: !!row.cancel_at_period_end,
+                previous: prev ? { active: !!prev.active, expires_at: prev.expires_at, cancel_at_period_end: !!prev.cancel_at_period_end } : null,
+                reason: reason || null, source: row.source, billing_event_id: row.billing_event_id || null,
+                membership_id: membership ? membership.id : null, plan_id: membership ? membership.plan_id : null,
+                plan_version_id: membership ? membership.plan_version_id : null, plan_version: v ? v.version : null,
+                subscription_id: row.subscription_id || null,
+            },
         }, { traceparent });
     }
 
