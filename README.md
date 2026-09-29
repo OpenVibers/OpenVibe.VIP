@@ -61,7 +61,7 @@ home that is not a cache.
 - **OpenVibe.Events** — delivery of Billing's events to `/internal/events`; relay of VIP's outbox.
 - **PostgreSQL 18 and Valkey 9** (OpenVibe.Host `roles/data/`, ADR-035): every read and write is async through `openvibe-sdk/db`; Valkey holds the per-actor limit counters (optional).
 - **openvibe-contracts** v0.76.0, **openvibe-sdk** v0.20.1 (outbox, inbox, delivery signatures, per-actor
-  limits), **openvibe-shared** v1.27.0 (Frame, legal pages, release manifest and update metrics, metrics,
+  limits), **openvibe-shared** v2.2.0 (Frame, legal pages, release manifest and update metrics, metrics,
   readiness).
 - Consumers, through the client below: Chat (the member badge), Community (members-only spaces and
   threads), Blog (members-only posts) and Wiki (VIP spaces and pages); Live is not wired yet.

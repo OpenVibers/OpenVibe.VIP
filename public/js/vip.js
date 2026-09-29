@@ -2,7 +2,7 @@
 (function () {
     'use strict';
     document.documentElement.classList.add('js');
-    document.addEventListener('DOMContentLoaded', function () {
+    function wire() {
         // Dashboard rule form: show the plan/perk pickers only for the requirement that uses them.
         var form = document.querySelector('form[action$="/rules"]');
         if (!form) return;
@@ -14,5 +14,7 @@
             if (perk) perk.closest('label').hidden = req.value !== 'perk';
         }
         if (req) { req.addEventListener('change', sync); sync(); }
-    });
+    }
+    document.addEventListener('DOMContentLoaded', wire);
+    document.addEventListener('ov:boost:load', wire);   // boost swaps <main> without a reload: wire the new content too
 })();

@@ -32,7 +32,7 @@ const { createActorLimits } = require('./api/actor-limits');
 const { createSessionRoutes } = require('./web/session');
 const { createWebRoutes } = require('./web/routes');
 const { createEmbedRoutes } = require('./web/embeds');
-const { createLayout, assetVersion } = require('./web/layout');
+const { createLayout, assetVersion, setRelease } = require('./web/layout');
 const { createVipReadiness } = require('./observability');
 const pages = require('./web/pages');
 
@@ -54,6 +54,7 @@ async function createApp(opts = {}) {
     const domain = createDomain({ db, config, outbox, billing, now, log });
     const apiAuth = createApiAuth({ config, keys, userAuth });
     const release = require('openvibe-shared/release').createRelease({ service: 'vip', root: path.join(__dirname, '..') });
+    setRelease(release.release);
     const layout = createLayout({ config, release });
 
     const app = express();

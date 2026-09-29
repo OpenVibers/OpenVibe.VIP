@@ -169,6 +169,9 @@ const { test, run } = harness('api');
         assert.match(p.text, /<link rel="canonical" href="http:\/\/vip\.test\/lena">/);
         assert.match(p.text, /\/shared\/navbar\.js\?v=[0-9a-f]{12}/);
         assert.match(p.text, /<noscript>/);
+        assert.match(p.text, /<meta name="ov-boost" content="vip@[^"]+">/);
+        assert.match(p.text, /\/shared\/boost\.js\?v=[0-9a-f]{12}" data-main="#main" defer>/);
+        assert.match(p.text, /"loginUrl":"\/auth\/login\?next=\{path\}"/);
         assert.doesNotMatch(p.text, /\bfree\b|\$0|no ads/i);
         const hist = await t.page(`/lena/plans/${plan.slug}`);
         assert.strictEqual(hist.status, 200);
@@ -178,6 +181,18 @@ const { test, run } = harness('api');
         assert.strictEqual((await t.page('/nobody-here')).status, 404);
         const sm = await t.page('/sitemap.xml');
         assert.match(sm.text, /http:\/\/vip\.test\/lena/);
+    });
+
+    test('every rendered page carries the boost marker, boost script (data-main) and the {path} sign-in template', async () => {
+        const pages = [['/', null], ['/lena', null], ['/updates', null], ['/me', buyer], ['/dashboard', creator]];
+        for (const [p, user] of pages) {
+            const r = await t.page(p, user ? { user } : undefined);
+            assert.strictEqual(r.status, 200, `${p} → ${r.status}`);
+            assert.match(r.text, /<meta name="ov-boost" content="vip@[^"]+">/, `${p}: release marker`);
+            assert.match(r.text, /\/shared\/boost\.js\?v=[0-9a-f]{12}" data-main="#main" defer>/, `${p}: boost script`);
+            assert.match(r.text, /"loginUrl":"\/auth\/login\?next=\{path\}"/, `${p}: sign-in returns to the current page`);
+            assert.match(r.text, /<main id="main"/, `${p}: the swap target`);
+        }
     });
 
     test('joining from the page: form with anti-forgery token → Billing credit → member page', async () => {
