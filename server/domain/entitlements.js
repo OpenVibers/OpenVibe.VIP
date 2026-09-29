@@ -35,7 +35,7 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
 
     async function emitChanged(row, prev, { reason, membership }, traceparent) {
         const v = membership && membership.plan_version_id ? await plans.version(membership.plan_version_id) : null;
-        outbox.emit('vip.membership.changed', { type: 'membership', id: `${row.member_subject}:${row.creator_subject}` }, {
+        await outbox.emit('vip.membership.changed', { type: 'membership', id: `${row.member_subject}:${row.creator_subject}` }, {
             member: userRef(row.member_subject), creator: userRef(row.creator_subject), kind: row.kind,
             active: !!row.active, expires_at: row.expires_at, cancel_at_period_end: !!row.cancel_at_period_end,
             previous: prev ? { active: !!prev.active, expires_at: prev.expires_at, cancel_at_period_end: !!prev.cancel_at_period_end } : null,

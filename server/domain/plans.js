@@ -53,7 +53,7 @@ function createPlans({ db, now, outbox, creators, perks }) {
 
     async function emitPublished(plan, v, traceparent) {
         const creator = await creators.byId(plan.creator_id);
-        outbox.emit('vip.plan.published', { type: 'plan', id: plan.id, revision: v.version }, {
+        await outbox.emit('vip.plan.published', { type: 'plan', id: plan.id, revision: v.version }, {
             plan_id: plan.id, slug: plan.slug, version: v.version, version_id: v.id,
             creator: creators.present(creator), billing_kind: plan.billing_kind,
             terms: json(v.terms, {}), published_at: v.published_at,

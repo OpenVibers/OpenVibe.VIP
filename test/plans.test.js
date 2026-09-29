@@ -163,5 +163,27 @@ const { test, run } = harness('plans');
         assert.strictEqual(own.status, 200);
     });
 
+    test('a failed outbox write fails the publish: the plan commits only with its event', async () => {
+        const fresh = t.network.newUser('erin', { role: 'streamer' });
+        // Neither is a change if the event is not written with it: the outbox INSERT must fail the transaction.
+        // The event write fails (a rejecting emit, as a failed INSERT would): no DDL, so this also runs as the DML-only role under test:pg.
+        const ob = t.app.locals.outbox, realEmit = ob.emit;
+        ob.emit = async () => { throw new Error('outbox write failed (test)'); };
+        let cid;
+        try {
+            const res = await t.call('POST', '/api/v1/plans', { user: fresh, body: { name: 'Doomed', publish: true } });
+            assert.strictEqual(res.status, 500, `the publish must not succeed without its event: ${res.text}`);
+            cid = (await t.domain.creators.bySubject(fresh.subject)).id;
+            assert.deepStrictEqual(await t.domain.plans.list({ creatorId: cid, includeDrafts: true, includeArchived: true }), [], 'the plan rolled back with the event');
+        } finally {
+            ob.emit = realEmit;
+        }
+        const ok = await t.call('POST', '/api/v1/plans', { user: fresh, body: { name: 'Doomed', publish: true } });
+        assert.strictEqual(ok.status, 201, ok.text);
+        const ev = (await t.outboxEvents('vip.plan.published')).filter((e) => e.subject.id === ok.json.plan.id);
+        assert.strictEqual(ev.length, 1);
+        assert.strictEqual(ev[0].payload.version, 1);
+    });
+
     await run().finally(async () => await t.close());
 })();

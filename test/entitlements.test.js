@@ -260,5 +260,25 @@ const MIN = 60_000;
         assert.strictEqual(byName.status, 200, byName.text);
     });
 
+    test('a failed outbox write fails the delivery: the projection commits only with its event', async () => {
+        const m = t.network.newUser('m19');
+        const ent = t.billing.pay(m.subject, creator.subject).events[1];
+        // Neither is a change if the event is not written with it: the outbox INSERT must fail the transaction.
+        // The event write fails (a rejecting emit, as a failed INSERT would): no DDL, so this also runs as the DML-only role under test:pg.
+        const ob = t.app.locals.outbox, realEmit = ob.emit;
+        ob.emit = async () => { throw new Error('outbox write failed (test)'); };
+        try {
+            const res = await t.deliver(ent);
+            assert.strictEqual(res.status, 500, `the delivery must not succeed without its event: ${JSON.stringify(res.json)}`);
+            assert.strictEqual(res.json.code, 'vip.event_failed');
+            assert.strictEqual(await t.domain.entitlements.getRow(m.subject, creator.subject), null, 'the projection rolled back with the event');
+        } finally {
+            ob.emit = realEmit;
+        }
+        const ok = await t.deliver(ent);   // the inbox claim rolled back too, so Events' retry applies it
+        assert.strictEqual(ok.json.outcome, 'changed');
+        assert.strictEqual((await t.outboxEvents('vip.membership.changed')).filter((x) => x.payload.member.id === m.subject).length, 1);
+    });
+
     await run().finally(async () => await t.close());
 })();
