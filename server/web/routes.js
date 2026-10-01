@@ -8,7 +8,7 @@
  *   GET  /dashboard[?as=network]    creator dashboard: plans, versions, perks, members, gated resources
  *   GET  /:username                 a creator's plan page (join through Billing)
  *   GET  /:username/plans/:slug     that plan's public terms history
- *   GET  /robots.txt, /sitemap.xml
+ *   GET  /robots.txt, /sitemap.xml, /llms.txt
  *
  * Every POST needs the signed-in viewer and the form's anti-forgery token; it acts through the same
  * domain calls as the API and redirects back with a notice (?ok= / ?error=).
@@ -16,13 +16,16 @@
 const crypto = require('crypto');
 const ovServe = require('openvibe-shared/serve');
 const frame = require('openvibe-shared/frame');
+const seo = require('openvibe-shared/seo');
 const express = require('express');
 const { VipError, bool } = require('../util');
 const { viewerMiddleware } = require('./session');
 const { createForms } = require('./forms');
 const pages = require('./pages');
 
-const RESERVED = new Set(['me', 'dashboard', 'auth', 'api', 'internal', 'css', 'js', 'terms', 'privacy', 'dmca', 'robots.txt', 'sitemap.xml', 'release.json', 'metrics', 'favicon.ico', 'embed']);
+const RESERVED = new Set(['me', 'dashboard', 'auth', 'api', 'internal', 'css', 'js', 'terms', 'privacy', 'dmca', 'robots.txt', 'sitemap.xml', 'llms.txt', 'release.json', 'metrics', 'favicon.ico', 'embed']);
+// The sitemap's lastmod: when this server booted — a real date, computed once, never per request.
+const BOOT_AT = new Date().toISOString();
 
 function createWebRoutes({ domain, config, layout, userAuth }) {
     const router = express.Router();
@@ -73,11 +76,32 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
         });
     }
 
-    router.get('/robots.txt', (req, res) => res.type('text/plain').send(`User-agent: *\nDisallow: /me\nDisallow: /dashboard\nDisallow: /auth/\nDisallow: /api/\nDisallow: /embed/\nSitemap: ${config.baseUrl}/sitemap.xml\n`));
+    // Crawl and machine-readability artifacts, built from openvibe-shared/seo — the same
+    // toolkit the other OpenVibe sites use. Public data only, never the viewer.
+    router.get('/robots.txt', (req, res) => res.type('text/plain').send(seo.robotsTxt({
+        sitemaps: [`${config.baseUrl}/sitemap.xml`],
+        disallow: ['/me', '/dashboard', '/auth/', '/api/', '/embed/'],
+    })));
     router.get('/sitemap.xml', async (req, res) => {
-        const urls = [`${config.baseUrl}/`, ...(await creators.listPublic({ limit: 5000 })).map((c) => `${config.baseUrl}/${encodeURIComponent(c.username)}`)];
-        res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((u) => `<url><loc>${u.replace(/&/g, '&amp;')}</loc></url>`).join('\n')}\n</urlset>\n`);
+        const urls = [{ loc: `${config.baseUrl}/`, lastmod: BOOT_AT }, ...(await creators.listPublic({ limit: 5000 })).map((c) => ({ loc: `${config.baseUrl}/${encodeURIComponent(c.username)}`, lastmod: BOOT_AT }))];
+        res.type('application/xml').send(seo.sitemapXml(urls));
     });
+    // /llms.txt (llmstxt.org): a plain-markdown map of the site for language-model crawlers.
+    router.get('/llms.txt', (req, res) => res.type('text/plain').send(seo.llmsTxt({
+        name: 'OpenVibe.VIP',
+        summary: 'OpenVibe.VIP: memberships for creators — plans, perks and benefits recognised across every OpenVibe site.',
+        details: 'A creator page lists the plans and perks a creator offers and how to join through Billing. Every plan keeps its published terms history, and a membership always points at the version it was bought under. Reading any public page needs no account; joining needs a signed-in person. Memberships, the dashboard, sign-in, embeds and the API are per-person and are never listed here.',
+        sections: [
+            { title: 'Start here', links: [
+                { title: 'Creators with published plans', url: `${config.baseUrl}/`, note: 'every creator on OpenVibe.VIP, with their public plans' },
+                { title: 'What shipped on OpenVibe.VIP', url: `${config.baseUrl}/updates` },
+            ] },
+            { title: 'Machine-readable', links: [
+                { title: 'Sitemap', url: `${config.baseUrl}/sitemap.xml`, note: 'the public pages, with lastmod' },
+                { title: 'robots.txt', url: `${config.baseUrl}/robots.txt` },
+            ] },
+        ],
+    })));
 
     // What shipped on OpenVibe.VIP: the shared update log every OpenVibe site has.
     router.get('/updates', (req, res) => send(res, 200, { viewer: req.viewer, canonicalPath: '/updates', title: 'What shipped on OpenVibe.VIP', body: frame.updatesBody({ service: 'vip', siteName: 'OpenVibe.VIP' }) + `<script src="${ovServe.url('shipped.js')}" defer></script>` }));
