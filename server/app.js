@@ -19,6 +19,7 @@ const path = require('path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { http } = require('openvibe-contracts');
+const cache = require('openvibe-shared/cache-policy');
 const { loadConfig } = require('./config');
 const { openDb } = require('./db');
 const { createKeyProvider, createUserAuth } = require('./network');
@@ -112,7 +113,7 @@ async function createApp(opts = {}) {
         setHeaders(res, filePath) {
             const rel = path.relative(PUBLIC_DIR, filePath).split(path.sep).join('/');
             const v = res.req && res.req.query && res.req.query.v;
-            res.setHeader('Cache-Control', v && v === assetVersion(rel) ? 'public, max-age=31536000, immutable' : 'no-cache');
+            res.setHeader('Cache-Control', cache.assetHeaders(rel, { hashed: v && v === assetVersion(rel) }));
         },
     }));
     app.use(createWebRoutes({ domain, config, layout, userAuth }));

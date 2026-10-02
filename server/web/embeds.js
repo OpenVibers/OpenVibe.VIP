@@ -21,6 +21,7 @@
  */
 const crypto = require('crypto');
 const express = require('express');
+const cache = require('openvibe-shared/cache-policy');
 const { esc } = require('../util');
 
 const USERNAME_RE = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,39}$/;
@@ -120,10 +121,10 @@ function createEmbedRoutes({ domain, config }) {
             });
             res.removeHeader('X-Frame-Options');
             if (!found) {
-                return res.status(404).set('Cache-Control', 'public, max-age=60').type('html')
+                return res.status(404).set('Cache-Control', cache.htmlHeaders({ maxAge: 60 })).type('html')
                     .send(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>OpenVibe.VIP</title><style>${STYLES[theme]}</style></head><body><main class="w"><p class="k">OpenVibe.VIP</p><p class="n">No memberships to show.</p></main></body></html>\n`);
             }
-            return res.status(200).set('Cache-Control', 'public, max-age=60').type('html').send(widgetHtml({ card: found.card, theme }));
+            return res.status(200).set('Cache-Control', cache.htmlHeaders({ maxAge: 60 })).type('html').send(widgetHtml({ card: found.card, theme }));
         } catch (e) { return next(e); }
     });
 
