@@ -9,8 +9,8 @@
  * cancellation are handed to OpenVibe.Billing, and entitlement truth is Billing's.
  */
 const express = require('express');
-const { http } = require('openvibe-contracts');
-const { VipError, fail, userSubject, isUserSubject, entityRef, bool } = require('../util');
+const svc = require('openvibe-sdk/service');
+const { fail, userSubject, isUserSubject, entityRef, bool } = require('../util');
 
 const CAP = {
     planCreate: 'vip.plan.create',
@@ -376,23 +376,16 @@ function v1Router({ domain, apiAuth, limits }) {
     return r;
 }
 
-/** Async-safe handler: VipError → problem+json; anything else → 500. */
-function wrap(fn) {
-    return async (req, res, next) => {
-        try {
-            const p = await fn(req, res, next);
-            if (p && typeof p.catch === 'function') p.catch((e) => sendError(req, res, e));
-        } catch (e) { sendError(req, res, e); }
-    };
-}
+/**
+ * Async-safe handler: VipError → problem+json; anything else → 500 vip.internal with 'internal error'.
+ * Built from openvibe-sdk/service (plan T1) with VIP's own options — the fallback code and detail, and
+ * `extra` nested as { details } below 500, are the kit's internalCode / internalDetail / extra: 'details'.
+ * The exported signatures stay (req, res, e), so no call site moves.
+ */
+const VIP_ERRORS = { name: 'VIP', extra: 'details', internalCode: 'vip.internal', internalDetail: 'internal error' };
 
-function sendError(req, res, e) {
-    if (res.headersSent) return;
-    if (e instanceof VipError) {
-        return http.sendProblem(res, e.status, e.code, { detail: e.detail || e.message, ctx: req.ov, extra: e.extra && e.status < 500 ? { details: e.extra } : undefined });
-    }
-    console.error('[VIP] unexpected error:', e);
-    return http.sendProblem(res, 500, 'vip.internal', { detail: 'internal error', ctx: req.ov });
-}
+const wrap = (fn) => svc.wrap(fn, VIP_ERRORS);
+
+const sendError = (req, res, e) => svc.sendError(res, req, e, undefined, VIP_ERRORS);
 
 module.exports = { v1Router, wrap, sendError, CAP };
