@@ -183,6 +183,25 @@ const { test, run } = harness('api');
         assert.match(sm.text, /http:\/\/vip\.test\/lena/);
     });
 
+    test('discovery artifacts: robots.txt, sitemap.xml and llms.txt from the shared seo kit', async () => {
+        const robots = await t.call('GET', '/robots.txt', { token: null });
+        assert.strictEqual(robots.status, 200);
+        assert.match(robots.headers.get('content-type'), /^text\/plain/);
+        for (const d of ['/me', '/dashboard', '/auth/', '/api/', '/embed/']) assert.match(robots.text, new RegExp(`Disallow: ${d.replace(/\//g, '\\/')}\\n`), `robots disallows ${d}`);
+        assert.match(robots.text, /Sitemap: http:\/\/vip\.test\/sitemap\.xml\n/, 'robots names the sitemap');
+        const sm = await t.call('GET', '/sitemap.xml', { token: null });
+        assert.strictEqual(sm.status, 200);
+        assert.match(sm.headers.get('content-type'), /^application\/xml/);
+        assert.match(sm.text, /<loc>http:\/\/vip\.test\/<\/loc>/, 'the sitemap lists the home URL');
+        assert.match(sm.text, /<loc>http:\/\/vip\.test\/lena<\/loc>/, 'the sitemap lists creator pages');
+        assert.match(sm.text, /<lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/, 'every url carries a real lastmod');
+        const llms = await t.call('GET', '/llms.txt', { token: null });
+        assert.strictEqual(llms.status, 200);
+        assert.match(llms.headers.get('content-type'), /^text\/plain/);
+        assert.match(llms.text, /^# /, 'llms.txt starts with a markdown heading');
+        assert.match(llms.text, /\[Creators with published plans\]\(http:\/\/vip\.test\/\)/, 'llms.txt lists the main public pages');
+    });
+
     test('every rendered page carries the boost marker, boost script (data-main) and the {path} sign-in template', async () => {
         const pages = [['/', null], ['/lena', null], ['/updates', null], ['/me', buyer], ['/dashboard', creator]];
         for (const [p, user] of pages) {
