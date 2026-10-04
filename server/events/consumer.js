@@ -5,11 +5,14 @@
  * (scripts/subscribe.js): billing.entitlement.*, billing.subscription.*, billing.transaction.reversed.
  *
  *   billing.entitlement.changed    the projection takes Billing's { active, expires_at, subscription }
- *                                  (granted, renewed, canceled, expired, refund, chargeback, …)
+ *                                  (granted, renewed, canceled, expired, refund, chargeback, …); a granted/renewed
+ *                                  event with a transaction_id also records the paid period (domain/periods.js);
+ *                                  renewal_failed (past_due, grace_until) and grace_ended are stored, never authorize
  *   billing.subscription.canceled  cancel at period end: the flag changes, the period still runs
  *   billing.transaction.reversed   a reversal that revoked subscription periods puts the pair's
  *                                  projection in doubt at once (the next check asks Billing), even
- *                                  before — or without — the matching entitlement event
+ *                                  before — or without — the matching entitlement event; the period that
+ *                                  transaction paid is marked reversed (a tombstone when it is not recorded yet)
  *
  * Exactly once: the openvibe-sdk inbox claims (consumer, event_id) in the same PostgreSQL transaction as
  * the change. Order: rows remember the Billing time they reflect; see domain/entitlements.js.
@@ -26,7 +29,7 @@ const CONSUMER = 'vip-billing';
 function consumerRouter({ domain, config, log = console }) {
     const router = express.Router();
     const inbox = createPgInbox(domain.db, { now: domain.now });   // idempotency_receipts: migrations/0001_initial.sql
-    const { entitlements } = domain;
+    const { entitlements, periods } = domain;
 
     async function handle(event) {
         const p = event.payload && typeof event.payload === 'object' ? event.payload : {};
@@ -38,11 +41,24 @@ function consumerRouter({ domain, config, log = console }) {
             if (!isUserSubject(member) || !isUserSubject(creator)) return 'ignored:bad_subjects';
             if (p.kind && p.kind !== entitlements.KIND) return 'ignored:kind';
             const sub = p.subscription || null;
-            return (await entitlements.apply({
-                member, creator, active: !!p.active, expiresAt: p.expires_at || null,
+            let reversed = false;
+            if (p.transaction_id && periods.PAID_REASONS.has(p.reason)) {
+                // A renewal starts where the paid period ends, or now when it already ended.
+                const prev = await entitlements.getRow(member, creator);
+                const prevEnd = prev && prev.expires_at && Date.parse(prev.expires_at) > asOf ? prev.expires_at : event.timestamp;
+                // A period already reversed (its reversal came first) grants nothing, whatever this event says.
+                reversed = (await periods.recordPaid({
+                    member, creator, subscriptionId: sub ? sub.id : null, transactionId: p.transaction_id,
+                    periodStart: prevEnd, periodEnd: p.expires_at || null, reason: p.reason,
+                })).outcome === 'reversed';
+            }
+            const out = await entitlements.apply({
+                member, creator, active: !!p.active && !reversed, expiresAt: p.expires_at || null,
                 cancelAtPeriodEnd: sub ? !!sub.cancel_at_period_end : undefined, subscriptionId: sub ? sub.id : undefined,
-                subscriptionStatus: sub ? sub.status : undefined, reason: p.reason || null, source: 'event', eventId: event.event_id, asOf,
-            })).outcome;
+                subscriptionStatus: sub ? sub.status : undefined, graceUntil: p.grace_until || undefined, reason: p.reason || null, source: 'event', eventId: event.event_id, asOf,
+            });
+            if (reversed) await entitlements.doubt(member, creator);
+            return out.outcome;
         }
         if (event.event_type === 'billing.subscription.canceled') {
             const s = p.subscription || {};
@@ -55,11 +71,15 @@ function consumerRouter({ domain, config, log = console }) {
             })).outcome;
         }
         if (event.event_type === 'billing.transaction.reversed') {
-            if (!(Number(p.entitlements_revoked) > 0)) return 'ignored:no_entitlement';
+            // A provider reversal says how many periods it revoked; a credit refund of a subscription period says what it reversed.
+            const meta = p.metadata && typeof p.metadata === 'object' ? p.metadata : {};
+            const ofSubscription = meta.original_type === 'subscription' || typeof meta.subscription_id === 'string';
+            if (!(Number(p.entitlements_revoked) > 0) && !ofSubscription) return 'ignored:no_entitlement';
             // The reversal runs streamer → subscriber (from/to of the original swapped).
             const member = p.to_subject;
             const creator = p.from_subject;
             if (!isUserSubject(member) || !isUserSubject(creator)) return 'ignored:bad_subjects';
+            await periods.recordReversed({ member, creator, reversesTxn: p.reverses_txn, reversedBy: p.transaction_id || null, reason: p.type || null });
             return await entitlements.doubt(member, creator) ? 'doubt' : 'no_projection';
         }
         return 'ignored:type';

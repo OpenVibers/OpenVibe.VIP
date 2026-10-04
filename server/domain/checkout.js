@@ -28,7 +28,7 @@ function billingProblem(err) {
     fail(503, 'vip.billing_unavailable', 'Billing is not answering right now; nothing was charged');
 }
 
-function createCheckout({ db, now, config, billing, creators, plans, entitlements }) {
+function createCheckout({ db, now, config, billing, creators, plans, entitlements, periods }) {
     const byId = async (id) => await db.prepare('SELECT * FROM vip_checkouts WHERE id = ?').get(id) || null;
 
     async function start({ member, planId, provider, successUrl, cancelUrl, autoRenew = true, traceparent }) {
@@ -65,10 +65,20 @@ function createCheckout({ db, now, config, billing, creators, plans, entitlement
             const sub = out.subscription || {};
             const ent = out.entitlement || {};
             await mark({ status: 'paid', billing_subscription_id: sub.id || null });
-            await entitlements.apply({
-                member, creator: creator.subject, active: !!ent.active, expiresAt: ent.expires_at || sub.current_period_end || null,
-                cancelAtPeriodEnd: !!sub.cancel_at_period_end, subscriptionId: sub.id || null, subscriptionStatus: sub.status || null,
-                reason: 'granted', source: 'billing_check', asOf: now(), checkoutId: id, traceparent,
+            // The projection and the charge that paid the first period land together (the event may come before or after).
+            await db.tx(async () => {
+                await entitlements.apply({
+                    member, creator: creator.subject, active: !!ent.active, expiresAt: ent.expires_at || sub.current_period_end || null,
+                    cancelAtPeriodEnd: !!sub.cancel_at_period_end, subscriptionId: sub.id || null, subscriptionStatus: sub.status || null,
+                    reason: 'granted', source: 'billing_check', asOf: now(), checkoutId: id, traceparent,
+                });
+                const txn = out.transaction && out.transaction.id;
+                if (txn) {
+                    await periods.recordPaid({
+                        member, creator: creator.subject, subscriptionId: sub.id || null, transactionId: txn,
+                        periodStart: iso(now()), periodEnd: ent.expires_at || sub.current_period_end || null, reason: 'granted',
+                    });
+                }
             });
             return { checkout: present(await byId(id)), membership_started: !!ent.active, checkout_url: null, checkout_ref: null };
         }

@@ -5,6 +5,7 @@ const { createCreators } = require('./creators');
 const { createPerks } = require('./perks');
 const { createPlans } = require('./plans');
 const { createMemberships } = require('./memberships');
+const { createPeriods } = require('./periods');
 const { createEntitlements } = require('./entitlements');
 const { createPolicies } = require('./policies');
 const { createCheckout } = require('./checkout');
@@ -15,12 +16,13 @@ function createDomain({ db, config, outbox, billing, now = () => Date.now(), log
     const perks = createPerks({ db, now });
     const plans = createPlans({ db, now, outbox, creators, perks });
     const memberships = createMemberships({ db, now, creators, plans });
+    const periods = createPeriods({ db, now, log });
     const entitlements = createEntitlements({ db, now, config, billing, outbox, memberships, plans, log });
     const policies = createPolicies({ db, now, creators, plans, perks, memberships, entitlements });
-    const checkout = createCheckout({ db, now, config, billing, creators, plans, entitlements });
+    const checkout = createCheckout({ db, now, config, billing, creators, plans, entitlements, periods });
     const cards = createCards({ db, config, creators, plans, perks, billing, now, log });
     const tx = async (fn) => await db.tx(fn);
-    return { db, config, now, tx, outbox, billing, creators, perks, plans, memberships, entitlements, policies, checkout, cards };
+    return { db, config, now, tx, outbox, billing, creators, perks, plans, memberships, periods, entitlements, policies, checkout, cards };
 }
 
 module.exports = { createDomain };

@@ -46,7 +46,10 @@ async function start() {
     const timers = [];
     if (config.jobs.enabled) {
         const every = (ms, fn) => { const t = setInterval(() => { Promise.resolve().then(fn).catch((e) => console.warn('[VIP] job:', e.message)); }, ms); t.unref(); timers.push(t); };
-        every(config.jobs.refreshIntervalMs, async () => await domain.entitlements.refreshDue());
+        every(config.jobs.refreshIntervalMs, async () => {
+            await domain.periods.audit();   // doubts what has no paid period record, so refreshDue asks Billing about it now
+            await domain.entitlements.refreshDue();
+        });
         every(6 * 3600 * 1000, async () => await outbox.outbox.prune());
         outbox.start();
     }
