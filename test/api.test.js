@@ -183,6 +183,32 @@ const { test, run } = harness('api');
         assert.match(sm.text, /http:\/\/vip\.test\/lena/);
     });
 
+    test('the head comes from openvibe-shared/shell and keeps every tag and script of the site', async () => {
+        const p = await t.page('/lena');
+        const head = p.text.slice(0, p.text.indexOf('</head>'));
+        assert.strictEqual(head.match(/<title>/g).length, 1, 'exactly one <title>');
+        assert.match(head, /<title>Lena memberships · OpenVibe\.VIP<\/title>/);
+        assert.match(head, /<link rel="canonical" href="http:\/\/vip\.test\/lena">/);
+        assert.match(head, /<meta name="robots" content="index,follow">/);
+        assert.match(head, /<meta property="og:title" content="Lena memberships · OpenVibe\.VIP">/);
+        assert.match(head, /<meta name="ai-summary" content="[^"]+">/);
+        assert.match(head, /<script type="application\/ld\+json">\{[^<]*"@type":"WebPage"/);
+        assert.match(head, /<meta name="referrer" content="strict-origin-when-cross-origin">/);
+        assert.match(head, /<link rel="icon"[^>]*data-ov-icon="vip"/, 'the app-icon tags');
+        assert.match(head, /<link rel="stylesheet" href="\/css\/vip\.css\?v=[^"]+">/);
+        assert.match(head, /<meta name="ov-boost" content="vip@[^"]+">/);
+        assert.match(head, /<script src="\/shared\/boost\.js\?v=[0-9a-f]{12}" data-main="#main" defer><\/script>/);
+        assert.match(head, /<script src="\/js\/vip\.js\?v=[^"]+" defer><\/script>/);
+        for (const s of ['theme-loader', 'navbar', 'footer']) assert.match(head, new RegExp(`/shared/${s}\\.js\\?v=[0-9a-f]{12}`), s);
+        assert.match(p.text, /<body data-page="creator">/);
+        assert.match(p.text, /<header class="site-head">/);
+        assert.match(p.text, /<main id="main" class="page">/);
+        assert.match(p.text, /id="ov-footer"/);
+        assert.match(p.text, /OpenVibeFooter\.init\(window\.__OV_PAGE\.footer\)/);
+        const home = await t.page('/');
+        assert.match(home.text, /<title>OpenVibe\.VIP — memberships across OpenVibe<\/title>/);
+    });
+
     test('discovery artifacts: robots.txt, sitemap.xml and llms.txt from the shared seo kit', async () => {
         const robots = await t.call('GET', '/robots.txt', { token: null });
         assert.strictEqual(robots.status, 200);
