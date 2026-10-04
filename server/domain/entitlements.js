@@ -17,6 +17,10 @@
  * Ordering: every row remembers the Billing time it reflects (billing_as_of). An older event that
  * would grant is ignored; an older event that would revoke puts the row in doubt (valid_until = 0),
  * so the next check goes to Billing — out-of-order delivery can deny briefly, never grant wrongly.
+ *
+ * Renewal grace: a failed renewal charge puts Billing's subscription in `past_due` until `grace_until`, then
+ * ends it. The entitlement is not active meanwhile; VIP stores both, answers inactive with
+ * `grace: { until, reason: 'renewal_failed' }`, and never authorizes a past_due row, whatever the event says.
  */
 const { iso, userRef } = require('../util');
 
@@ -55,7 +59,7 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
     /**
      * Apply what Billing said about (member, creator). Runs in a transaction (joins the caller's).
      * input: { member, creator, kind?, active, expiresAt, cancelAtPeriodEnd?, subscriptionId?,
-     *          subscriptionStatus?, reason, source: 'event'|'billing_check'|'import', eventId?, asOf (ms),
+     *          subscriptionStatus?, graceUntil?, reason, source: 'event'|'billing_check'|'import', eventId?, asOf (ms),
      *          origin?, checkoutId?, traceparent? }
      */
     async function apply(input) {
@@ -70,29 +74,34 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
                 }
                 return { outcome: 'stale_ignored', changed: false };
             }
+            const status = input.subscriptionStatus !== undefined ? input.subscriptionStatus : (prev ? prev.subscription_status : null);
+            // past_due never authorizes (Billing's entitlement is false then); the grace ends with the status.
+            const active = input.active && status !== 'past_due';
             const next = {
                 member_subject: input.member, creator_subject: input.creator, kind,
-                active: input.active ? 1 : 0, expires_at: input.expiresAt || null,
+                active: active ? 1 : 0, expires_at: input.expiresAt || null,
                 cancel_at_period_end: input.cancelAtPeriodEnd !== undefined ? (input.cancelAtPeriodEnd ? 1 : 0) : (prev ? prev.cancel_at_period_end : 0),
                 subscription_id: input.subscriptionId !== undefined ? input.subscriptionId : (prev ? prev.subscription_id : null),
-                subscription_status: input.subscriptionStatus !== undefined ? input.subscriptionStatus : (prev ? prev.subscription_status : null),
+                subscription_status: status,
+                grace_until: status === 'past_due' ? (input.graceUntil || (prev ? prev.grace_until : null) || null) : null,
                 source: input.source, last_reason: input.reason || null, billing_event_id: input.eventId || null,
-                billing_as_of: input.asOf, synced_at: at, valid_until: validUntil(at, input.active, input.expiresAt),
+                billing_as_of: input.asOf, synced_at: at, valid_until: validUntil(at, active, input.expiresAt),
                 last_used_at: prev ? prev.last_used_at : null,
             };
             await db.prepare(`INSERT INTO vip_entitlement_projection (member_subject, creator_subject, kind, active, expires_at, cancel_at_period_end, subscription_id,
-                    subscription_status, source, last_reason, billing_event_id, billing_as_of, synced_at, valid_until, last_used_at)
-                VALUES (@member_subject, @creator_subject, @kind, @active, @expires_at, @cancel_at_period_end, @subscription_id, @subscription_status,
+                    subscription_status, grace_until, source, last_reason, billing_event_id, billing_as_of, synced_at, valid_until, last_used_at)
+                VALUES (@member_subject, @creator_subject, @kind, @active, @expires_at, @cancel_at_period_end, @subscription_id, @subscription_status, @grace_until,
                     @source, @last_reason, @billing_event_id, @billing_as_of, @synced_at, @valid_until, @last_used_at)
                 ON CONFLICT (member_subject, creator_subject, kind) DO UPDATE SET active = excluded.active, expires_at = excluded.expires_at,
                     cancel_at_period_end = excluded.cancel_at_period_end, subscription_id = excluded.subscription_id,
-                    subscription_status = excluded.subscription_status, source = excluded.source, last_reason = excluded.last_reason,
+                    subscription_status = excluded.subscription_status, grace_until = excluded.grace_until, source = excluded.source, last_reason = excluded.last_reason,
                     billing_event_id = excluded.billing_event_id, billing_as_of = excluded.billing_as_of, synced_at = excluded.synced_at,
                     valid_until = excluded.valid_until`).run(next);
             const { membership } = await memberships.onProjection({ prev, next, reason: input.reason, origin: input.origin, checkoutId: input.checkoutId });
             // A first look that finds no membership is not a change anyone needs to hear about.
             const changed = prev
-                ? (!!prev.active !== !!next.active || prev.expires_at !== next.expires_at || !!prev.cancel_at_period_end !== !!next.cancel_at_period_end)
+                ? (!!prev.active !== !!next.active || prev.expires_at !== next.expires_at || !!prev.cancel_at_period_end !== !!next.cancel_at_period_end
+                    || (prev.grace_until || null) !== next.grace_until)
                 : !!next.active;
             if (changed) await emitChanged(next, prev, { reason: input.reason, membership }, input.traceparent);
             return { outcome: changed ? 'changed' : 'unchanged', changed, row: await getRow(input.member, input.creator, kind), membership };
@@ -108,7 +117,7 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
             const active = subscriptionStatus === 'active' ? !!prev.active : false;
             return await apply({
                 member, creator, active, expiresAt: active ? (prev.expires_at || currentPeriodEnd) : prev.expires_at, cancelAtPeriodEnd: true,
-                subscriptionId, subscriptionStatus, reason: 'cancel_scheduled', source, eventId, asOf, traceparent,
+                subscriptionId, subscriptionStatus, graceUntil: prev.grace_until, reason: 'cancel_scheduled', source, eventId, asOf, traceparent,
             });
         });
     }
@@ -120,18 +129,20 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
 
     async function answer(row, source, { stale = false, membership } = {}) {
         const t = now();
-        const active = !!row.active && !!row.expires_at && Date.parse(row.expires_at) > t;
+        const active = !!row.active && row.subscription_status !== 'past_due' && !!row.expires_at && Date.parse(row.expires_at) > t;
+        const graceEnd = row.subscription_status === 'past_due' && row.grace_until ? Date.parse(row.grace_until) : NaN;
         return {
             member: userRef(row.member_subject), creator: userRef(row.creator_subject), kind: row.kind,
             status: active ? 'active' : 'inactive', active, expires_at: row.expires_at, cancel_at_period_end: !!row.cancel_at_period_end,
             source, stale, valid_until: iso(Math.max(0, row.valid_until)), checked_at: iso(t),
             membership: membership ? await memberships.present(membership) : null,
+            grace: !active && graceEnd > t ? { until: row.grace_until, reason: 'renewal_failed' } : null,
         };
     }
     function unknown(member, creator, reason) {
         return {
             member: userRef(member), creator: userRef(creator), kind: KIND, status: 'unknown', active: false, expires_at: null,
-            cancel_at_period_end: false, source: 'none', stale: false, valid_until: null, checked_at: iso(now()), reason, membership: null,
+            cancel_at_period_end: false, source: 'none', stale: false, valid_until: null, checked_at: iso(now()), reason, membership: null, grace: null,
         };
     }
 
@@ -147,7 +158,7 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
         const out = await apply({
             member, creator, active: !!(e && e.active), expiresAt: (e && e.expires_at) || null,
             cancelAtPeriodEnd: sub ? !!sub.cancel_at_period_end : undefined, subscriptionId: sub ? sub.id : undefined,
-            subscriptionStatus: sub ? sub.status : undefined, reason: 'checked', source: 'billing_check', asOf: now(), traceparent,
+            subscriptionStatus: sub ? sub.status : undefined, graceUntil: (e && e.grace_until) || (sub && sub.grace_until) || undefined, reason: 'checked', source: 'billing_check', asOf: now(), traceparent,
         });
         return out.row || await getRow(member, creator);
     }

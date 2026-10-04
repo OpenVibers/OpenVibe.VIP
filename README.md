@@ -42,7 +42,9 @@ membership was bought under — never whether it is active), `vip_entitlement_pr
 Billing entitlements with `valid_until`), `vip_checkouts` (checkout hand-offs), and the openvibe-sdk
 `event_outbox` / `idempotency_receipts`. `vip_memberships` is a tenth table the charter did not
 list; it is needed so that "a membership always points at the version it was bought under" has a
-home that is not a cache.
+home that is not a cache. An eleventh, `vip_membership_periods` (migration 0002), is the per-period
+charge ledger described under "Renewals, grace and refunds" below; it is a record of Billing's
+transactions, not an authority for anything.
 
 ## Does not own
 
@@ -138,6 +140,33 @@ The vhost [deploy/nginx/openvibe.vip.conf](deploy/nginx/openvibe.vip.conf) is no
   the paid period's end for renewals and cancellations.
 - A background job re-confirms, with Billing, projections that products used in the last hour
   before they go stale.
+
+### Renewals, grace and refunds (Billing does them; VIP records and converges)
+
+- A membership renews by **Billing's own sweep**: one charge per period from the subscriber's credit,
+  idempotent on `renew:<subscription id>:<period end>`, so a retried or replayed renewal never charges
+  twice. VIP has no renewal call; it projects `billing.entitlement.changed` (`reason: renewed`), and a
+  renewal keeps the plan version the membership already has.
+- **Charge ledger.** `vip_membership_periods` holds one row per paid period, unique on the Billing
+  transaction (`billing_transaction_id`), written from a `granted`/`renewed` entitlement event that names
+  its `transaction_id` and from the credit checkout answer. A replayed event, or the same transaction
+  again, never records a second row. `billing.transaction.reversed` marks the period it reverses as
+  `reversed` (`reversed_by` = the reversing transaction); if the reversal arrives **before** the grant
+  event, a tombstone is written and the grant that follows leaves it reversed and grants nothing.
+  Provider refunds and chargebacks (`entitlements_revoked`) and credit refunds of a subscription period
+  (`metadata.original_type = subscription`) both count; a reversal of anything else is ignored.
+- **Renewal grace.** When a renewal charge fails Billing moves the subscription to `past_due` until
+  `grace_until`, retrying on the same key, then ends it (`grace_ended`). VIP stores both
+  (`vip_entitlement_projection.grace_until`), answers `status: inactive` with
+  `grace: { until, reason: "renewal_failed" }` while the grace runs (`null` otherwise), and **never
+  authorizes a `past_due` row**, whatever an event says. After the grace the membership row is kept and
+  inactive; a later paid renewal restores it on the same plan version. `vip.membership.changed` carries
+  `renewal_failed` / `grace_ended` as its `reason`; its payload is unchanged.
+- **Audit.** `periods.audit()` runs with the projection refresh job: an active, fresh row that claims a
+  payment (last word `granted`/`renewed`, or the pair already has ledger rows) without a `paid` period
+  reaching its `expires_at`, or whose period was reversed, is logged, counted (`vip_period_audit_offenders`)
+  and put in doubt (`valid_until = 0`) so the next check asks Billing. Pairs VIP only knows from a Billing
+  check (imports, shadow entitlements) are not audited until a payment event names them.
 
 ### Checkout and cancellation (Billing does both)
 
@@ -345,6 +374,7 @@ Reporting a vulnerability: [SECURITY.md](SECURITY.md).
 | plan edits create versions and never rewrite historical terms | `test/plans.test.js` (edit → v2, v1 row byte-identical, triggers refuse UPDATE/DELETE, perk rename keeps terms) |
 | old members keep old terms; renewals keep them; a new purchase after a lapse takes the current version | `test/plans.test.js`, `test/api.test.js` (checkout version survives a later edit) |
 | cancel / renew / refund converge (events, and with events lost) | `test/entitlements.test.js` (injected clock) |
+| a renewal replayed or re-sent records one period; renew then refund reverses it; a reversal before the grant stays reversed; a failed renewal is inactive with a grace and never authorized; the audit doubts a paid period without a record | `test/renewal.test.js` |
 | a stale projection cannot authorize past `valid_until` (+ grace), even with Billing down for 100 days | `test/entitlements.test.js` |
 | authoritative fallback and sensitive checks | `test/entitlements.test.js`, `test/policies.test.js` |
 | gated-resource evaluation fails closed (no rule, unknown, perk missing, guest, VIP down in the client) | `test/policies.test.js` |

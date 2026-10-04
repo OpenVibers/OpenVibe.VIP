@@ -21,7 +21,8 @@
     "the Live subscription import has run: 43 plans and plan versions, 44 creators, 87 migration maps (production, 2026-09-23)",
     "Chat (subscriber badge, vip.entitlement.check), Community (members-only spaces and threads) and Blog (members-only posts) call VIP in production (vip.resource.policy.evaluate grants for Community and Blog)",
     "14 vip.* capabilities, the service manifest and its events registered in openvibe-contracts v0.19.0 (this repository pins v0.79.0)",
-    "per-actor limits on /api/v1 (openvibe-sdk/limits)"
+    "per-actor limits on /api/v1 (openvibe-sdk/limits)",
+    "renewal/refund convergence via Billing events: a per-period charge ledger (vip_membership_periods, unique per Billing transaction; reversals and reversal-before-grant tombstones), a past_due renewal grace that never authorizes (answer.grace), and a period audit that doubts a paid period without a record (migration 0002; docs/cutover-0002-renewal-periods.md)"
   ],
   "not_yet": [
     "not launched: openvibe.vip is still an OpenVibe.Sites placeholder and the service answers on loopback only",

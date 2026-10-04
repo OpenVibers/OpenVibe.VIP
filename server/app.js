@@ -73,6 +73,7 @@ async function createApp(opts = {}) {
             return [{ labels: { state: 'fresh' }, value: r.fresh || 0 }, { labels: { state: 'stale' }, value: r.stale || 0 }];
         },
     });
+    metrics.registry.gauge({ name: 'vip_period_audit_offenders', help: 'Active memberships the last period audit found without a paid period record', collect: () => domain.periods.stats.offenders });
     app.use(http.middleware());
     app.use((req, res, next) => {
         res.setHeader('X-Content-Type-Options', 'nosniff');
