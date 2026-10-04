@@ -4,7 +4,7 @@
   "code": true,
   "deployed": true,
   "deployment": "Deployed internally, not launched: deployed with `sudo ovhost deploy vip`, /opt/openvibe.vip, unit openvibe-vip, 127.0.0.1:4620 loopback only; https://openvibe.vip still serves the OpenVibe.Sites placeholder. Principal vip; three Events subscriptions for Billing's events (secret rotated 2026-09-24); checkout closed (VIP_CHECKOUT_PROVIDERS empty). On 2026-09-24 production held the Live import: 44 creators, 43 plans (one per creator), 0 memberships while Billing runs in shadow.",
-  "contracts": "openvibe-contracts v0.79.0",
+  "contracts": "openvibe-contracts v0.92.0",
   "plan": "OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026)",
   "roadmap": "Wave 10",
   "works": [
@@ -20,8 +20,9 @@
     "reusable membership card (GET /embed/:username/card.json, GET /api/v1/creators/:ref/card), badge (/embed/:username/badge.svg) and embeddable widget (/embed/:username/widget): public data only, no cookies, the widget's CSP frame-ancestors configurable (VIP_WIDGET_FRAME_ANCESTORS), member count from Billing that the creator can hide (not deployed yet)",
     "the Live subscription import has run: 43 plans and plan versions, 44 creators, 87 migration maps (production, 2026-09-23)",
     "Chat (subscriber badge, vip.entitlement.check), Community (members-only spaces and threads) and Blog (members-only posts) call VIP in production (vip.resource.policy.evaluate grants for Community and Blog)",
-    "14 vip.* capabilities, the service manifest and its events registered in openvibe-contracts v0.19.0 (this repository pins v0.79.0)",
+    "14 vip.* capabilities, the service manifest and its events registered in openvibe-contracts v0.19.0 (this repository pins v0.92.0)",
     "per-actor limits on /api/v1 (openvibe-sdk/limits)",
+    "the Billing client (server/billing-client.js) is a thin wrapper over openvibe-sdk/commerce (openvibe-sdk v0.28.0), shared with Tips: same capabilities, idempotency keys and retry-once-on-401",
     "renewal/refund convergence via Billing events: a per-period charge ledger (vip_membership_periods, unique per Billing transaction; reversals and reversal-before-grant tombstones), a past_due renewal grace that never authorizes (answer.grace), and a period audit that doubts a paid period without a record (migration 0002; docs/cutover-0002-renewal-periods.md)"
   ],
   "not_yet": [
@@ -30,7 +31,7 @@
     "Billing sells one channel subscription per member and creator: one purchasable plan per creator, no tiers, no network membership product",
     "revocations reach Chat and Community through vip.membership.changed subscriptions (2026-09-24); Blog and Live still converge by the cache TTL (30-60 s)"
   ],
-  "updated": "2026-09-28",
+  "updated": "2026-10-04",
   "features": [
     "plans with immutable versions, perks and product bindings",
     "entitlement projection from Billing events with valid_until, grace and a Billing fallback; unknown never authorizes",
