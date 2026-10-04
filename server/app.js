@@ -20,6 +20,7 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const { http } = require('openvibe-contracts');
 const cache = require('openvibe-shared/cache-policy');
+const { createIndexNow } = require('openvibe-shared/indexnow');
 const { loadConfig } = require('./config');
 const { openDb } = require('./db');
 const { createKeyProvider, createUserAuth } = require('./network');
@@ -52,6 +53,10 @@ async function createApp(opts = {}) {
     const userAuth = createUserAuth(config, keys);
     const billing = opts.billing || createBillingClient(config, { fetchImpl });
     const outbox = opts.outbox || createVipOutbox({ db, config, fetchImpl: opts.eventsFetch, now, log });
+    // IndexNow (openvibe-shared/indexnow): created once at boot from INDEXNOW_KEY; unset → off
+    // (nothing mounted, nothing sent). The key file is served at /<key>.txt and the page routes
+    // ping the engines when a creator's public page is created or changes.
+    const indexnow = opts.indexnow || createIndexNow({ host: config.baseUrl, key: config.indexnow.key, ...(fetchImpl ? { fetch: fetchImpl } : {}), log });
     const domain = createDomain({ db, config, outbox, billing, now, log });
     const apiAuth = createApiAuth({ config, keys, userAuth });
     const release = require('openvibe-shared/release').createRelease({ service: 'vip', root: path.join(__dirname, '..') });
@@ -106,6 +111,9 @@ async function createApp(opts = {}) {
     app.use('/api/v1', express.json({ limit: '64kb' }), (req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); }, apiAuth.middleware, v1Router({ domain, apiAuth, limits }));
     app.use('/auth', createSessionRoutes(config, userAuth, { fetchImpl }));
     { const legal = require('openvibe-shared/legal'); app.get(legal.PATHS, legal.handler({ id: 'vip', service: 'vip', host: 'openvibe.vip', name: 'OpenVibe.VIP', profile: 'ugc' })); }
+    // GET /<key>.txt — the IndexNow key file (only when a key is configured; it serves itself).
+    // Mounted before the static files and the page routes so nothing shadows it.
+    if (indexnow.enabled) app.use(indexnow.keyFile);
 
     // This site's own pinned copy of the OpenVibe Frame's browser files (openvibe-shared/serve).
     app.use('/shared', require('openvibe-shared/serve').handler());
@@ -117,7 +125,7 @@ async function createApp(opts = {}) {
             res.setHeader('Cache-Control', cache.assetHeaders(rel, { hashed: v && v === assetVersion(rel) }));
         },
     }));
-    app.use(createWebRoutes({ domain, config, layout, userAuth }));
+    app.use(createWebRoutes({ domain, config, layout, userAuth, indexnow }));
 
     app.use((req, res) => {
         if (req.path.startsWith('/api/') || req.path.startsWith('/internal/')) return http.sendProblem(res, 404, 'not_found', { ctx: req.ov });
@@ -133,7 +141,7 @@ async function createApp(opts = {}) {
         return res.status(500).type('html').send(layout.page({ title: 'Error', robots: 'noindex', body: pages.errorPage({ status: 500, title: 'Something went wrong', message: 'This one is on us. Please try again.' }) }));
     });
 
-    Object.assign(app.locals, { config, db, domain, keys, outbox, billing, consumer, metrics });
+    Object.assign(app.locals, { config, db, domain, keys, outbox, billing, consumer, metrics, indexnow });
     return app;
 }
 

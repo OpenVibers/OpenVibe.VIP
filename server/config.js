@@ -89,6 +89,9 @@ function loadConfig(env = process.env) {
             refreshIntervalMs: int(env.VIP_REFRESH_INTERVAL_MS, 60 * 1000),
         },
         liveUrl: trim(env.LIVE_URL || 'https://openvibe.live'),
+        // IndexNow (openvibe-shared/indexnow): the key whose file is served at /<key>.txt and signs
+        // pings when a creator's public page changes. Unset (the default) disables both.
+        indexnow: { key: env.INDEXNOW_KEY || '' },
 
         // The public card, badge and widget (/embed, server/web/embeds.js). frameAncestors is the
         // widget's CSP frame-ancestors (any site by default: it is meant to be embedded; the rest of

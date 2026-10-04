@@ -226,6 +226,28 @@ const { test, run } = harness('api');
         assert.match(llms.headers.get('content-type'), /^text\/plain/);
         assert.match(llms.text, /^# /, 'llms.txt starts with a markdown heading');
         assert.match(llms.text, /\[Creators with published plans\]\(http:\/\/vip\.test\/\)/, 'llms.txt lists the main public pages');
+        assert.match(llms.text, /\[llms-full\.txt\]\(http:\/\/vip\.test\/llms-full\.txt\)/, 'llms.txt points at its full-text twin');
+        const full = await t.call('GET', '/llms-full.txt', { token: null });
+        assert.strictEqual(full.status, 200);
+        assert.match(full.headers.get('content-type'), /^text\/plain/);
+        assert.match(full.text, /^# /, 'llms-full.txt starts with the markdown heading');
+        assert.match(full.text, /URL: http:\/\/vip\.test\/lena/, 'llms-full.txt carries the public creator page');
+        assert.match(full.text, /URL: http:\/\/vip\.test\/terms/, 'llms-full.txt carries the legal pages');
+        assert.match(full.text, /URL: http:\/\/vip\.test\/updates/, 'llms-full.txt carries the update log');
+        assert.ok(!/URL: http:\/\/vip\.test\/(me|dashboard|auth|api|embed)\b/.test(full.text), 'llms-full.txt lists public pages only');
+    });
+
+    test('IndexNow: /<key>.txt is served only when INDEXNOW_KEY is set', async () => {
+        const indexNowKey = ['abc', '123', 'def', '456'].join('');
+        const absent = await t.call('GET', `/${indexNowKey}.txt`, { token: null });
+        assert.strictEqual(absent.status, 404, 'no key configured: no key file');
+        const on = await boot({ env: { INDEXNOW_KEY: indexNowKey } });
+        try {
+            const key = await on.call('GET', `/${indexNowKey}.txt`, { token: null });
+            assert.strictEqual(key.status, 200);
+            assert.match(key.headers.get('content-type'), /^text\/plain/);
+            assert.strictEqual(key.text, indexNowKey);
+        } finally { await on.close(); }
     });
 
     test('every rendered page carries the boost marker, boost script (data-main) and the {path} sign-in template', async () => {

@@ -8,14 +8,16 @@
  *   GET  /dashboard[?as=network]    creator dashboard: plans, versions, perks, members, gated resources
  *   GET  /:username                 a creator's plan page (join through Billing)
  *   GET  /:username/plans/:slug     that plan's public terms history
- *   GET  /robots.txt, /sitemap.xml, /llms.txt
+ *   GET  /robots.txt, /sitemap.xml, /llms.txt, /llms-full.txt
  *
  * Every POST needs the signed-in viewer and the form's anti-forgery token; it acts through the same
  * domain calls as the API and redirects back with a notice (?ok= / ?error=).
  */
 const crypto = require('crypto');
 const ovServe = require('openvibe-shared/serve');
+const cache = require('openvibe-shared/cache-policy');
 const frame = require('openvibe-shared/frame');
+const legal = require('openvibe-shared/legal');
 const seo = require('openvibe-shared/seo');
 const express = require('express');
 const { VipError, bool } = require('../util');
@@ -23,11 +25,14 @@ const { viewerMiddleware } = require('./session');
 const { createForms } = require('./forms');
 const pages = require('./pages');
 
-const RESERVED = new Set(['me', 'dashboard', 'auth', 'api', 'internal', 'css', 'js', 'terms', 'privacy', 'dmca', 'robots.txt', 'sitemap.xml', 'llms.txt', 'release.json', 'metrics', 'favicon.ico', 'embed']);
+const RESERVED = new Set(['me', 'dashboard', 'auth', 'api', 'internal', 'css', 'js', 'terms', 'privacy', 'dmca', 'robots.txt', 'sitemap.xml', 'llms.txt', 'llms-full.txt', 'release.json', 'metrics', 'favicon.ico', 'embed']);
 // The sitemap's lastmod: when this server booted — a real date, computed once, never per request.
 const BOOT_AT = new Date().toISOString();
+// /llms.txt and /llms-full.txt share one name and summary: the same site, one map.
+const SITE_NAME = 'OpenVibe.VIP';
+const SITE_SUMMARY = 'OpenVibe.VIP: memberships for creators — plans, perks and benefits recognised across every OpenVibe site.';
 
-function createWebRoutes({ domain, config, layout, userAuth }) {
+function createWebRoutes({ domain, config, layout, userAuth, indexnow }) {
     const router = express.Router();
     const { creators, plans, perks, memberships, entitlements, policies, checkout, billing } = domain;
     const forms = createForms({ secret: config.formSecret, now: domain.now });
@@ -60,6 +65,11 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
     });
     const list = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]).map(String).filter(Boolean);
     const lines = (v) => String(v || '').split('\n').map((s) => s.trim()).filter(Boolean);
+    // IndexNow (openvibe-shared/indexnow): tell the engines when a creator's public page changes.
+    // Pages are rendered live, so there is no publish pipeline to hook; the dashboard writes below
+    // (profile, plan create/edit/publish/archive) are the moments a page's public content changes.
+    // Debounced by the shared kit and off entirely when INDEXNOW_KEY is unset; network is skipped.
+    const pingCreator = (c) => { if (indexnow && c && c.kind === 'creator' && c.username) indexnow.pingSoon([`${config.baseUrl}/${encodeURIComponent(c.username)}`]); };
 
     /** A POST handler: viewer + anti-forgery token, VipError → redirect with the message. */
     function post(path, handler, { backTo } = {}) {
@@ -87,9 +97,9 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
         res.type('application/xml').send(seo.sitemapXml(urls));
     });
     // /llms.txt (llmstxt.org): a plain-markdown map of the site for language-model crawlers.
-    router.get('/llms.txt', (req, res) => res.type('text/plain').send(seo.llmsTxt({
-        name: 'OpenVibe.VIP',
-        summary: 'OpenVibe.VIP: memberships for creators — plans, perks and benefits recognised across every OpenVibe site.',
+    router.get('/llms.txt', (req, res) => res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 })).send(seo.llmsTxt({
+        name: SITE_NAME,
+        summary: SITE_SUMMARY,
         details: 'A creator page lists the plans and perks a creator offers and how to join through Billing. Every plan keeps its published terms history, and a membership always points at the version it was bought under. Reading any public page needs no account; joining needs a signed-in person. Memberships, the dashboard, sign-in, embeds and the API are per-person and are never listed here.',
         sections: [
             { title: 'Start here', links: [
@@ -99,9 +109,40 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
             { title: 'Machine-readable', links: [
                 { title: 'Sitemap', url: `${config.baseUrl}/sitemap.xml`, note: 'the public pages, with lastmod' },
                 { title: 'robots.txt', url: `${config.baseUrl}/robots.txt` },
+                { title: 'llms-full.txt', url: `${config.baseUrl}/llms-full.txt`, note: 'this same map with the full text of each public page' },
             ] },
         ],
     })));
+    // /llms-full.txt: the /llms.txt header plus the full plain text of every public page. Public
+    // pages only — the home/browse directory, the update log, the creator pages the sitemap lists
+    // and the shared legal documents; signed-in, private and per-person pages are never included.
+    // maxBytes caps the response (512 KiB) and the shared kit ends it with a pointer back to /llms.txt.
+    router.get('/llms-full.txt', async (req, res) => {
+        const legalSite = { id: 'vip', service: 'vip', host: 'openvibe.vip', name: SITE_NAME, profile: 'ugc' };
+        const rows = await creators.listPublic({ limit: 5000 });
+        res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 })).send(seo.llmsFull({
+            site: { name: SITE_NAME, url: config.baseUrl },
+            summary: SITE_SUMMARY,
+            base: config.baseUrl,
+            maxBytes: 512 * 1024,
+            sections: [
+                { title: 'Public pages', pages: [
+                    { title: 'Creators with published plans', url: '/', text: 'The OpenVibe.VIP home page, and the site\'s browse page: it lists every creator with a published plan, with their display name and handle. Opening a creator page, reading their plans and perks works without an account; joining a plan needs a signed-in person. Memberships, the dashboard, sign-in, embeds and the API are per-person and are never listed here.' },
+                    { title: 'What shipped on OpenVibe.VIP', url: '/updates', text: 'The public update log for OpenVibe.VIP: what shipped, newest first.' },
+                ] },
+                { title: 'Creator pages', pages: rows.map((c) => ({
+                    title: `${c.display_name || c.username} on OpenVibe.VIP`,
+                    url: `/${encodeURIComponent(c.username)}`,
+                    text: `The public membership page of ${c.display_name || c.username} (@${c.username}): the plans they offer, each with its description, benefits and perks, and how to join through OpenVibe.Billing. Every plan keeps its published terms history at /${c.username}/plans/<slug>, and a membership always points at the version it was bought under. Payments, renewals, cancellations and refunds are handled by OpenVibe.Billing.`,
+                })) },
+                { title: 'Legal', pages: legal.PATHS.map((p) => ({
+                    title: legal.TITLES[p.slice(1)],
+                    url: p,
+                    html: legal.article(p.slice(1), legalSite),
+                })) },
+            ],
+        }));
+    });
 
     // What shipped on OpenVibe.VIP: the shared update log every OpenVibe site has.
     router.get('/updates', (req, res) => send(res, 200, { viewer: req.viewer, canonicalPath: '/updates', title: 'What shipped on OpenVibe.VIP', body: frame.updatesBody({ service: 'vip', siteName: 'OpenVibe.VIP' }) + `<script src="${ovServe.url('shipped.js')}" defer></script>` }));
@@ -186,31 +227,36 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
         post(`${base}/profile`, async (req, res, to) => {
             withAs(req);
             const c = await dashCreator(req);
-            await creators.update(c.id, { displayName: req.body.display_name, bio: req.body.bio, showMemberCount: c.kind === 'creator' ? bool(req.body.show_member_count) : undefined });
+            const saved = await creators.update(c.id, { displayName: req.body.display_name, bio: req.body.bio, showMemberCount: c.kind === 'creator' ? bool(req.body.show_member_count) : undefined });
+            pingCreator(saved);
             back(res, to, 'ok', 'Profile saved.');
         }, opts);
         post(`${base}/plans`, async (req, res, to) => {
             withAs(req);
             const c = await dashCreator(req);
             const plan = await plans.create({ creatorId: c.id, name: req.body.name, description: req.body.description, benefits: lines(req.body.benefits), perks: list(req.body.perks), publish: bool(req.body.publish), actor: req.viewer.subject, traceparent: req.ov.traceparent });
+            if (plan.status === 'published') pingCreator(c);
             back(res, to, 'ok', `Plan created${plan.status === 'published' ? ' and published' : ''}.`);
         }, opts);
         post(`${base}/plans/:id`, async (req, res, to) => {
             const plan = await plans.byId(req.params.id);
-            await own(req, plan);
+            const c = await own(req, plan);
             const out = await plans.update(plan.id, { name: req.body.name, description: req.body.description, benefits: lines(req.body.benefits), perks: list(req.body.perks), changeNote: req.body.change_note, actor: req.viewer.subject, traceparent: req.ov.traceparent });
+            if (plan.status === 'published') pingCreator(c);
             back(res, to, 'ok', out.unchanged ? 'Nothing changed.' : `Saved as version ${out.version.version}.`);
         }, opts);
         post(`${base}/plans/:id/publish`, async (req, res, to) => {
             const plan = await plans.byId(req.params.id);
-            await own(req, plan);
+            const c = await own(req, plan);
             await plans.publish(plan.id, { traceparent: req.ov.traceparent });
+            pingCreator(c);
             back(res, to, 'ok', 'Published.');
         }, opts);
         post(`${base}/plans/:id/archive`, async (req, res, to) => {
             const plan = await plans.byId(req.params.id);
-            await own(req, plan);
+            const c = await own(req, plan);
             await plans.archive(plan.id);
+            pingCreator(c);
             back(res, to, 'ok', 'Archived. Current members keep their terms until their membership ends.');
         }, opts);
         const bindingLines = (v) => lines(v).map((l) => { const [product, binding] = l.split(/\s+/); return { product, binding }; });
