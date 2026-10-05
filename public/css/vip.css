@@ -52,3 +52,11 @@ details > summary { cursor: pointer; font-weight: 600; margin: 6px 0; }
 table.members { width: 100%; border-collapse: collapse; display: block; overflow-x: auto; }
 table.members th, table.members td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--vip-border); }
 code { background: rgba(255, 255, 255, .06); padding: 1px 5px; border-radius: 4px; }
+
+/* The home's kit sections (openvibe-shared/showcase) sit in this page's 880 px column, which already has its gutter. */
+.page .sc-hero, .page .sc-sec { padding-left: 0; padding-right: 0; }
+.page .sc-hero { padding-top: 8px; }
+.page .sc-sec { margin-top: 44px; }
+@media (min-width: 640px) { .page .sc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.page #creators .creator-list { margin-top: 12px; }
+.page .creators-cta { margin-top: 14px; }

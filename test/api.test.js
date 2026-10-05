@@ -207,6 +207,15 @@ const { test, run } = harness('api');
         assert.match(p.text, /OpenVibeFooter\.init\(window\.__OV_PAGE\.footer\)/);
         const home = await t.page('/');
         assert.match(home.text, /<title>OpenVibe\.VIP — memberships across OpenVibe<\/title>/);
+        // The home opens with the showcase kit (openvibe-shared/showcase): one h1 (the hero), the kit's sheet on the
+        // home only, no invented prices, and the creators still listed below it.
+        assert.ok(home.text.includes('class="sc-hero') && home.text.includes('class="sc-sec"'), 'hero and sections');
+        assert.match(home.text, /<link rel="stylesheet" href="\/shared\/showcase\.css\?v=[^"]+">/);
+        assert.strictEqual((home.text.match(/<h1[\s>]/g) || []).length, 1, 'one h1');
+        assert.ok(home.text.indexOf('class="sc-hero') < home.text.indexOf('id="creators"'), 'the creators follow the showcase');
+        assert.match(home.text, /href="\/lena"/, 'a creator with a plan is listed');
+        assert.ok(!/sc-tiers|sc-price/.test(home.text), 'no price on the home: Billing prices each plan on its creator page');
+        assert.ok(!p.text.includes('showcase.css'), 'a creator page does not link the kit');
     });
 
     test('discovery artifacts: robots.txt, sitemap.xml and llms.txt from the shared seo kit', async () => {
