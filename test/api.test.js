@@ -226,6 +226,16 @@ const { test, run } = harness('api');
         assert.match(llms.headers.get('content-type'), /^text\/plain/);
         assert.match(llms.text, /^# /, 'llms.txt starts with a markdown heading');
         assert.match(llms.text, /\[Creators with published plans\]\(http:\/\/vip\.test\/\)/, 'llms.txt lists the main public pages');
+        const full = await t.call('GET', '/llms-full.txt', { token: null });
+        assert.strictEqual(full.status, 200);
+        assert.match(full.headers.get('content-type'), /^text\/plain/);
+        assert.strictEqual(full.headers.get('cache-control'), 'public, max-age=3600', 'llms-full.txt is cached for an hour');
+        assert.match(full.text, /^# OpenVibe\.VIP/, 'llms-full.txt starts with the llms.txt header');
+        assert.match(full.text, /URL: http:\/\/vip\.test\/\n/, 'the home page');
+        assert.match(full.text, /URL: http:\/\/vip\.test\/lena\n/, 'the public creator page');
+        assert.match(full.text, new RegExp(`URL: http:\\/\\/vip\\.test\\/lena\\/plans\\/${plan.slug}\\n`), 'the plan terms page');
+        assert.match(full.text, /Front row/, 'the full plan text');
+        assert.match(full.text, /Monthly stream/, 'a benefit of the current version');
     });
 
     test('every rendered page carries the boost marker, boost script (data-main) and the {path} sign-in template', async () => {
