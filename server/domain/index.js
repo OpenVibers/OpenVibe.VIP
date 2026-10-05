@@ -11,10 +11,10 @@ const { createPolicies } = require('./policies');
 const { createCheckout } = require('./checkout');
 const { createCards } = require('./cards');
 
-function createDomain({ db, config, outbox, billing, now = () => Date.now(), log = console }) {
+function createDomain({ db, config, outbox, billing, now = () => Date.now(), log = console, indexnow = null }) {
     const creators = createCreators({ db, now });
     const perks = createPerks({ db, now });
-    const plans = createPlans({ db, now, outbox, creators, perks });
+    const plans = createPlans({ db, now, outbox, creators, perks, baseUrl: config.baseUrl, indexnow });
     const memberships = createMemberships({ db, now, creators, plans });
     const periods = createPeriods({ db, now, log });
     const entitlements = createEntitlements({ db, now, config, billing, outbox, memberships, plans, log });

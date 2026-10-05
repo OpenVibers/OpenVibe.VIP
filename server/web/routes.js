@@ -8,7 +8,7 @@
  *   GET  /dashboard[?as=network]    creator dashboard: plans, versions, perks, members, gated resources
  *   GET  /:username                 a creator's plan page (join through Billing)
  *   GET  /:username/plans/:slug     that plan's public terms history
- *   GET  /robots.txt, /sitemap.xml, /llms.txt
+ *   GET  /robots.txt, /sitemap.xml, /llms.txt, /llms-full.txt
  *
  * Every POST needs the signed-in viewer and the form's anti-forgery token; it acts through the same
  * domain calls as the API and redirects back with a notice (?ok= / ?error=).
@@ -23,9 +23,18 @@ const { viewerMiddleware } = require('./session');
 const { createForms } = require('./forms');
 const pages = require('./pages');
 
-const RESERVED = new Set(['me', 'dashboard', 'auth', 'api', 'internal', 'css', 'js', 'terms', 'privacy', 'dmca', 'robots.txt', 'sitemap.xml', 'llms.txt', 'release.json', 'metrics', 'favicon.ico', 'embed']);
+const RESERVED = new Set(['me', 'dashboard', 'auth', 'api', 'internal', 'css', 'js', 'terms', 'privacy', 'dmca', 'robots.txt', 'sitemap.xml', 'llms.txt', 'llms-full.txt', 'release.json', 'metrics', 'favicon.ico', 'embed']);
 // The sitemap's lastmod: when this server booted — a real date, computed once, never per request.
 const BOOT_AT = new Date().toISOString();
+
+// The public description /llms.txt and /llms-full.txt share. llmstxt.org: a plain-markdown map of
+// the site for language-model crawlers — public data only, never the viewer.
+const LLMS_NAME = 'OpenVibe.VIP';
+const LLMS_SUMMARY = 'OpenVibe.VIP: memberships for creators — plans, perks and benefits recognised across every OpenVibe site.';
+const LLMS_DETAILS = 'A creator page lists the plans and perks a creator offers and how to join through Billing. Every plan keeps its published terms history, and a membership always points at the version it was bought under. Reading any public page needs no account; joining needs a signed-in person. Memberships, the dashboard, sign-in, embeds and the API are per-person and are never listed here.';
+// /llms-full.txt changes only when a creator or a plan does, so it is built from the database at
+// most once an hour (the browser keeps it the same 3600 s).
+const LLMS_FULL_TTL_MS = 3600 * 1000;
 
 function createWebRoutes({ domain, config, layout, userAuth }) {
     const router = express.Router();
@@ -88,9 +97,9 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
     });
     // /llms.txt (llmstxt.org): a plain-markdown map of the site for language-model crawlers.
     router.get('/llms.txt', (req, res) => res.type('text/plain').send(seo.llmsTxt({
-        name: 'OpenVibe.VIP',
-        summary: 'OpenVibe.VIP: memberships for creators — plans, perks and benefits recognised across every OpenVibe site.',
-        details: 'A creator page lists the plans and perks a creator offers and how to join through Billing. Every plan keeps its published terms history, and a membership always points at the version it was bought under. Reading any public page needs no account; joining needs a signed-in person. Memberships, the dashboard, sign-in, embeds and the API are per-person and are never listed here.',
+        name: LLMS_NAME,
+        summary: LLMS_SUMMARY,
+        details: LLMS_DETAILS,
         sections: [
             { title: 'Start here', links: [
                 { title: 'Creators with published plans', url: `${config.baseUrl}/`, note: 'every creator on OpenVibe.VIP, with their public plans' },
@@ -99,9 +108,63 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
             { title: 'Machine-readable', links: [
                 { title: 'Sitemap', url: `${config.baseUrl}/sitemap.xml`, note: 'the public pages, with lastmod' },
                 { title: 'robots.txt', url: `${config.baseUrl}/robots.txt` },
+                { title: 'llms-full.txt', url: `${config.baseUrl}/llms-full.txt`, note: 'the full text of every public page' },
             ] },
         ],
     })));
+
+    // /llms-full.txt: /llms.txt with the full plain text of every public page — the home copy, each
+    // creator's plan page and every published plan's terms. Built from public data only and cached
+    // in memory for an hour; the response says the same, so caches and crawlers may keep it too.
+    function termsText(v) {
+        const out = [];
+        if (v.description) out.push(v.description);
+        if (v.benefits.length) out.push(`Benefits: ${v.benefits.join('; ')}.`);
+        if (v.perks.length) out.push(`Perks: ${v.perks.map((p) => p.name).join(', ')}.`);
+        if (v.change_note) out.push(`Change: ${v.change_note}.`);
+        return out.join('\n');
+    }
+    async function buildLlmsFull() {
+        const creatorPages = [];
+        const planPages = [];
+        for (const row of await creators.listPublic({ limit: 5000 })) {
+            const c = creators.present(row);
+            const name = c.display_name || c.username;
+            const planRows = await Promise.all((await plans.list({ creatorId: c.id })).map(async (p) => await plans.present(p, { withVersions: true })));
+            const about = [`${name} (@${c.username}) offers membership plans on OpenVibe.VIP.`];
+            if (c.bio) about.push(c.bio);
+            for (const p of planRows) {
+                const v = p.current_version;
+                about.push(`Plan ${v.name} (version ${v.version})${v.description ? `: ${v.description}` : ''}`);
+            }
+            creatorPages.push({ title: `${name} memberships`, url: `/${c.username}`, text: about.join('\n\n') });
+            for (const p of planRows) {
+                const body = [`The published terms of ${name}'s ${p.current_version.name} plan on OpenVibe.VIP. Each edit is a new version; a member keeps the version they joined under.`];
+                for (const v of (p.versions || []).filter((x) => x.published_at)) {
+                    const terms = termsText(v);
+                    body.push(`Version ${v.version}${v.published_at ? ` (published ${String(v.published_at).slice(0, 10)})` : ''}${terms ? `\n${terms}` : ''}`);
+                }
+                planPages.push({ title: `${name}: ${p.current_version.name} terms`, url: `/${c.username}/plans/${p.slug}`, text: body.join('\n\n') });
+            }
+        }
+        return seo.llmsFull({
+            site: { name: LLMS_NAME, url: config.baseUrl },
+            summary: `${LLMS_SUMMARY} ${LLMS_DETAILS}`,
+            sections: [
+                { title: 'Home', pages: [{ title: `${LLMS_NAME} home`, url: '/', text: `${LLMS_SUMMARY}\n\n${LLMS_DETAILS}\n\nThe home page lists every creator with a published plan.` }] },
+                { title: 'Creators', pages: creatorPages },
+                { title: 'Plans', pages: planPages },
+            ],
+        });
+    }
+    let llmsFullCache = { at: 0, value: null };
+    router.get('/llms-full.txt', async (req, res, next) => {
+        try {
+            if (!llmsFullCache.value || domain.now() - llmsFullCache.at >= LLMS_FULL_TTL_MS) llmsFullCache = { at: domain.now(), value: await buildLlmsFull() };
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+            res.type('text/plain').send(llmsFullCache.value);
+        } catch (e) { next(e); }
+    });
 
     // What shipped on OpenVibe.VIP: the shared update log every OpenVibe site has.
     router.get('/updates', (req, res) => send(res, 200, { viewer: req.viewer, canonicalPath: '/updates', title: 'What shipped on OpenVibe.VIP', body: frame.updatesBody({ service: 'vip', siteName: 'OpenVibe.VIP' }) + `<script src="${ovServe.url('shipped.js')}" defer></script>` }));

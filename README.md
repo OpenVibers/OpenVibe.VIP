@@ -321,10 +321,29 @@ memberships* card gives the creator the badge and widget HTML and the card URL.
 Billing's price and period from `GET /api/v1/rates`, join form) · `/:username/plans/:slug` public terms
 history · `/me` your memberships, the version you joined under, cancel, badge preference ·
 `/dashboard` plans, versions, perks and bindings, members, members-only resources, the badge and
-widget to share and the member-count switch (`?as=network` for staff) · `/embed/:username/…` (above) · `/robots.txt`, `/sitemap.xml` · `/terms`, `/privacy`, `/dmca`
+widget to share and the member-count switch (`?as=network` for staff) · `/embed/:username/…` (above) · `/robots.txt`, `/sitemap.xml`, `/llms.txt`, `/llms-full.txt` · `/terms`, `/privacy`, `/dmca`
 (openvibe-shared legal). Navbar from `https://openvibe.network/shared/navbar.js`, SSR footer and
 `<noscript>` navigation from openvibe-shared. Forms carry HMAC anti-forgery tokens
 (`VIP_FORM_SECRET`); cookies are SameSite=Lax. No feed: plans are not a publication stream.
+
+### Crawlers and AI readers
+
+`/robots.txt` and `/sitemap.xml` come from openvibe-shared/seo (the sitemap lists the home and every
+creator with a published plan). `/llms.txt` is the site map for language models; `/llms-full.txt` is
+the same header followed by the full plain text of the home, every public creator page and every
+published plan's terms (`seo.llmsFull`, built from public data only, cached an hour in memory and with
+`Cache-Control: public, max-age=3600`). Every page's head carries an `ai-summary` meta and WebPage
+JSON-LD through openvibe-shared/shell.
+
+### IndexNow (openvibe-shared/indexnow)
+
+With `INDEXNOW_KEY` set (8–128 hex or alphanumeric characters, what IndexNow's own tools generate),
+the key file is served at `/<key>.txt` as `text/plain` (before static, so a file cannot shadow it) and
+a plan that changes tells the engines: publishing, editing a published plan and archiving ping
+`api.indexnow.org` with the creator's page, the plan's terms page and `/sitemap.xml`; the module
+batches and debounces (one POST per 30 s window). A draft, an unchanged edit, a replayed publish and
+network plans (no public creator page) never ping, and a failed ping never takes a publish down.
+Unset: off — the key route is not mounted and nothing is sent (`test/indexnow.test.js`).
 
 ## Before and after the Billing cutover
 
@@ -380,6 +399,8 @@ Reporting a vulnerability: [SECURITY.md](SECURITY.md).
 | gated-resource evaluation fails closed (no rule, unknown, perk missing, guest, VIP down in the client) | `test/policies.test.js` |
 | VIP works with Live unavailable | no code path calls Live; every test runs without a Live stub |
 | a creator's membership card, badge and widget are public-data only, the same for everyone, embeddable and inert | `test/embeds.test.js` (published plans only, no subjects or binding configs, no cookie read or set, CORS, SVG escaping and sandbox, the widget's frame-ancestors and hashed style, the creator's member-count switch, Billing outage keeps the last count or shows none) |
+| `/llms-full.txt` carries the full text of the home, creator and plan pages, and is cached for an hour | `test/llms-full.test.js`, `test/api.test.js` (discovery artifacts) |
+| IndexNow is off without `INDEXNOW_KEY` (no key route, nothing sent); with one the key file is served at `/<key>.txt` as `text/plain` and publishing, editing and archiving a plan ping the creator page, the terms page and the sitemap; a draft and an unchanged edit never ping | `test/indexnow.test.js` |
 
 Not yet demonstrated (needs the other services): convergence **across consuming products** end to end
 (Chat, Community, Blog and Wiki call VIP in code; Live does not), and a real Billing/Events round trip

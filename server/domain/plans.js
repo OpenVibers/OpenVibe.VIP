@@ -19,12 +19,27 @@ const { fail, prefixedId, iso, text, slug, slugify, json } = require('../util');
 
 const BILLING_KINDS = ['channel_subscription'];
 
-function createPlans({ db, now, outbox, creators, perks }) {
+function createPlans({ db, now, outbox, creators, perks, baseUrl = '', indexnow = null }) {
     const byId = async (id) => await db.prepare('SELECT * FROM vip_plans WHERE id = ?').get(id) || null;
     const version = async (id) => await db.prepare('SELECT * FROM vip_plan_versions WHERE id = ?').get(id) || null;
     const latestVersion = async (planId) => await db.prepare('SELECT * FROM vip_plan_versions WHERE plan_id = ? ORDER BY version DESC LIMIT 1').get(planId) || null;
     const versions = async (planId) => await db.prepare('SELECT * FROM vip_plan_versions WHERE plan_id = ? ORDER BY version DESC').all(planId);
     const versionPerks = async (versionId) => await db.prepare('SELECT * FROM vip_plan_perks WHERE plan_version_id = ? ORDER BY position').all(versionId);
+
+    /**
+     * IndexNow (openvibe-shared/indexnow): a published plan's page, its terms history and the sitemap
+     * all changed, so tell the engines. Unset key, a draft, an unchanged edit or a replay changes
+     * nothing and never pings. Never throws: a failed ping must never take a publish down.
+     */
+    async function pingPublic(plan) {
+        try {
+            if (!indexnow || !indexnow.enabled || !baseUrl || !plan) return;
+            const creator = await creators.byId(plan.creator_id);
+            if (!creator || !creator.username) return;   // network plans have no public page
+            const page = `${baseUrl}/${encodeURIComponent(creator.username)}`;
+            indexnow.pingSoon([page, `${page}/plans/${encodeURIComponent(plan.slug)}`, `${baseUrl}/sitemap.xml`]);
+        } catch { /* a ping never fails a publish */ }
+    }
 
     function cleanBenefits(v) {
         if (v == null) return null;
@@ -87,7 +102,7 @@ function createPlans({ db, now, outbox, creators, perks }) {
         const at = iso(now());
         const id = prefixedId('vpl', now());
         try {
-            return await db.tx(async () => {
+            const plan = await db.tx(async () => {
                 await db.prepare(`INSERT INTO vip_plans (id, creator_id, slug, status, billing_kind, current_version_id, latest_version, created_by, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, NULL, 0, ?, ?, ?)`).run(id, creatorId, planSlug, publish ? 'published' : 'draft', kind, actor, at, at);
                 const v = await insertVersion(await byId(id), {
@@ -97,6 +112,8 @@ function createPlans({ db, now, outbox, creators, perks }) {
                 if (publish) await emitPublished(await byId(id), v, traceparent);
                 return await byId(id);
             });
+            if (publish) await pingPublic(plan);
+            return plan;
         } catch (e) { return publishConflict(e); }
     }
 
@@ -116,11 +133,13 @@ function createPlans({ db, now, outbox, creators, perks }) {
             && JSON.stringify(perkRows.map((p) => p.id)) === JSON.stringify((await versionPerks(last.id)).map((pp) => pp.perk_id));
         if (same) return { plan, version: last, unchanged: true };
         const publish = plan.status === 'published';
-        return await db.tx(async () => {
+        const out = await db.tx(async () => {
             const v = await insertVersion(plan, { ...next, perkRows, changeNote: text(changeNote, 'change_note', 300), actor, publish });
             if (publish) await emitPublished(await byId(planId), v, traceparent);
             return { plan: await byId(planId), version: v, unchanged: false };
         });
+        if (publish) await pingPublic(out.plan);
+        return out;
     }
 
     async function publish(planId, { traceparent } = {}) {
@@ -129,7 +148,7 @@ function createPlans({ db, now, outbox, creators, perks }) {
         if (plan.status === 'published') return { plan, replay: true };
         if (plan.status === 'archived') fail(409, 'vip.plan_archived', 'an archived plan cannot be published again; create a new plan');
         try {
-            return await db.tx(async () => {
+            const out = await db.tx(async () => {
                 const v = await latestVersion(planId);
                 const at = iso(now());
                 await db.prepare('UPDATE vip_plan_versions SET published_at = ? WHERE id = ? AND published_at IS NULL').run(at, v.id);
@@ -137,6 +156,8 @@ function createPlans({ db, now, outbox, creators, perks }) {
                 await emitPublished(await byId(planId), await version(v.id), traceparent);
                 return { plan: await byId(planId), replay: false };
             });
+            await pingPublic(out.plan);
+            return out;
         } catch (e) { return publishConflict(e); }
     }
 
@@ -147,7 +168,9 @@ function createPlans({ db, now, outbox, creators, perks }) {
         if (plan.status === 'archived') return plan;
         const at = iso(now());
         await db.prepare("UPDATE vip_plans SET status = 'archived', archived_at = ?, updated_at = ? WHERE id = ?").run(at, at, planId);
-        return await byId(planId);
+        const archived = await byId(planId);
+        if (plan.status === 'published') await pingPublic(archived);   // the creator page and the sitemap lose the plan
+        return archived;
     }
 
     async function list({ creatorId, includeDrafts = false, includeArchived = false }) {

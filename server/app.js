@@ -20,6 +20,7 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const { http } = require('openvibe-contracts');
 const cache = require('openvibe-shared/cache-policy');
+const { createIndexNow } = require('openvibe-shared/indexnow');
 const { loadConfig } = require('./config');
 const { openDb } = require('./db');
 const { createKeyProvider, createUserAuth } = require('./network');
@@ -52,7 +53,12 @@ async function createApp(opts = {}) {
     const userAuth = createUserAuth(config, keys);
     const billing = opts.billing || createBillingClient(config, { fetchImpl });
     const outbox = opts.outbox || createVipOutbox({ db, config, fetchImpl: opts.eventsFetch, now, log });
-    const domain = createDomain({ db, config, outbox, billing, now, log });
+    // IndexNow (openvibe-shared/indexnow): created once at boot from INDEXNOW_KEY. Unset → off, no key
+    // file, nothing sent; a published plan tells the engines its page changed. Tests inject a spy.
+    const indexnow = opts.indexnow !== undefined ? opts.indexnow : createIndexNow({
+        host: config.baseUrl, key: config.indexnow.key, fetch: fetchImpl, log,
+    });
+    const domain = createDomain({ db, config, outbox, billing, now, log, indexnow });
     const apiAuth = createApiAuth({ config, keys, userAuth });
     const release = require('openvibe-shared/release').createRelease({ service: 'vip', root: path.join(__dirname, '..') });
     setRelease(release.release);
@@ -109,6 +115,9 @@ async function createApp(opts = {}) {
 
     // This site's own pinned copy of the OpenVibe Frame's browser files (openvibe-shared/serve).
     app.use('/shared', require('openvibe-shared/serve').handler());
+    // GET /<key>.txt — the IndexNow key file (mounted only when a key is configured; it serves itself
+    // and steps aside for every other path). Before static, so the key can never be shadowed by a file.
+    if (indexnow.enabled) app.use(indexnow.keyFile);
     app.use(express.static(PUBLIC_DIR, {
         index: false, redirect: false,
         setHeaders(res, filePath) {
@@ -133,7 +142,7 @@ async function createApp(opts = {}) {
         return res.status(500).type('html').send(layout.page({ title: 'Error', robots: 'noindex', body: pages.errorPage({ status: 500, title: 'Something went wrong', message: 'This one is on us. Please try again.' }) }));
     });
 
-    Object.assign(app.locals, { config, db, domain, keys, outbox, billing, consumer, metrics });
+    Object.assign(app.locals, { config, db, domain, keys, outbox, billing, consumer, metrics, indexnow });
     return app;
 }
 

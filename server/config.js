@@ -105,6 +105,11 @@ function loadConfig(env = process.env) {
             minute: Math.max(1, int(env.VIP_LIMITS_MINUTE, 120)),
             hour: Math.max(1, int(env.VIP_LIMITS_HOUR, 3000)),
         },
+
+        // IndexNow (openvibe-shared/indexnow): a key makes search engines recrawl a creator's page the
+        // moment a plan is published, edited or archived (the key file is served at /<key>.txt). Unset:
+        // off, no key file, nothing sent. Tests and drills never set it.
+        indexnow: { key: String(env.INDEXNOW_KEY || '').trim() },
     };
 }
 
