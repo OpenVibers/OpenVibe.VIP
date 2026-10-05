@@ -7,6 +7,7 @@
  * Copy rules: say what a plan includes and what Billing charges; never "free", "$0" or "no ads", and
  * no begging copy.
  */
+const showcase = require('openvibe-shared/showcase');
 const { esc } = require('../util');
 
 const fmtDate = (s) => {
@@ -43,17 +44,40 @@ function errorPage({ status, title, message }) {
     return `<section class="card narrow"><p class="eyebrow">${esc(status)}</p><h1>${esc(title)}</h1><p>${esc(message)}</p><p><a href="/">OpenVibe.VIP home</a></p></section>`;
 }
 
+/**
+ * The home: the product's own words (openvibe-shared/showcase), then the creators with published plans. No prices here:
+ * OpenVibe.Billing prices each plan, and a creator's page shows it before anyone joins.
+ */
 function home({ creators }) {
     const list = creators.length
         ? `<ul class="creator-list">${creators.map((c) => `<li><a href="/${encodeURIComponent(c.username)}"><b>${esc(c.display_name || c.username)}</b><span class="muted">@${esc(c.username)}</span></a></li>`).join('')}</ul>`
         : '<p class="muted">No creator has published a plan here yet.</p>';
-    return `<section class="hero">
-<h1>Memberships across OpenVibe</h1>
-<p>Join a creator's plan once and your membership is recognised on every OpenVibe site that honours it: a badge in chat, members-only posts, rooms and more, as each plan lists.</p>
-<p class="muted">Payments, renewals, cancellations and refunds are handled by OpenVibe.Billing. VIP keeps the plans, the exact terms you joined under, and the perks that come with them.</p>
-<p><a class="button" href="/me">Your memberships</a> <a class="button button-quiet" href="/dashboard">Offer a plan</a></p>
-</section>
-<section><h2>Creators with plans</h2>${list}</section>`;
+    return showcase.hero({
+        eyebrow: 'OpenVibe.VIP',
+        title: 'Memberships across', accent: 'OpenVibe',
+        lede: "Join a creator's plan once and your membership is recognised on every OpenVibe site that honours it: a badge in chat, members-only posts, rooms and more, as each plan lists.",
+        actions: creators.length
+            ? [{ label: 'Find a creator', href: '#creators', primary: true }, { label: 'Your memberships', href: '/me' }]
+            : [{ label: 'Offer a plan', href: '/dashboard', primary: true }, { label: 'Your memberships', href: '/me' }],
+        note: 'Payments, renewals, cancellations and refunds are handled by OpenVibe.Billing.',
+    }) + showcase.features({
+        title: 'What a plan can include',
+        lede: 'A creator builds each plan from perks; the plan lists exactly which, and each OpenVibe site that honours a perk recognises it.',
+        items: [
+            { icon: 'ov:vip', title: 'Badges', text: 'A members badge by your name, where the site shows it.' },
+            { icon: 'ov:blog', title: 'Members-only content', text: 'Posts and pages only members read in full.' },
+            { icon: 'ov:chat', title: 'Rooms', text: "A members' room to talk in." },
+            { icon: 'ov:community', title: 'Roles and emotes', text: 'A role in the community, emotes to use in chat.' },
+        ],
+    }) + showcase.steps({
+        title: 'How a membership works',
+        items: [
+            { title: "Pick a creator's plan", text: 'Each creator page lists their plans, what each includes and its price.' },
+            { title: 'Join through OpenVibe.Billing', text: 'Pay from your Vibes credit or another way Billing offers; renew automatically or not, your choice.' },
+            { title: 'Keep the terms you joined under', text: 'Plans are versioned: the version you joined stays yours while your membership lasts, and every version stays public in the terms history.' },
+        ],
+    }) + `
+<section class="sc-sec" id="creators" aria-labelledby="creators-h"><h2 id="creators-h">Creators with plans</h2>${list}<p class="muted creators-cta">Are you a creator? <a href="/dashboard">Offer a plan</a>.</p></section>`;
 }
 
 /** The creator's public plan page. */

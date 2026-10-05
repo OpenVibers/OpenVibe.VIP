@@ -169,7 +169,7 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
     // What shipped on OpenVibe.VIP: the shared update log every OpenVibe site has.
     router.get('/updates', (req, res) => send(res, 200, { viewer: req.viewer, canonicalPath: '/updates', title: 'What shipped on OpenVibe.VIP', body: frame.updatesBody({ service: 'vip', siteName: 'OpenVibe.VIP' }) + `<script src="${ovServe.url('shipped.js')}" defer></script>` }));
     router.get('/', async (req, res) => send(res, 200, {
-        active: 'home', viewer: req.viewer, canonicalPath: '/',
+        active: 'home', viewer: req.viewer, canonicalPath: '/', styles: [require('openvibe-shared/showcase').STYLESHEET],
         body: pages.home({ creators: (await creators.listPublic()).map(creators.present) }),
     }));
 
