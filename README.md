@@ -62,7 +62,7 @@ transactions, not an authority for anything.
 - **OpenVibe.Network** — RS256 service and user tokens (JWKS), OAuth sign-in for the pages.
 - **OpenVibe.Events** — delivery of Billing's events to `/internal/events`; relay of VIP's outbox.
 - **PostgreSQL 18 and Valkey 9** (OpenVibe.Host `roles/data/`, ADR-035): every read and write is async through `openvibe-sdk/db`; Valkey holds the per-actor limit counters (optional).
-- **openvibe-contracts** v0.76.0, **openvibe-sdk** v0.35.0 (outbox, inbox, delivery signatures, per-actor
+- **openvibe-contracts** v0.76.0, **openvibe-sdk** v0.28.0 (outbox, inbox, delivery signatures, per-actor
   limits), **openvibe-shared** v2.2.0 (Frame, legal pages, release manifest and update metrics, metrics,
   readiness).
 - Consumers, through the client below: Chat (the member badge), Community (members-only spaces and
