@@ -22,7 +22,7 @@
     "Chat (subscriber badge, vip.entitlement.check), Community (members-only spaces and threads) and Blog (members-only posts) call VIP in production (vip.resource.policy.evaluate grants for Community and Blog)",
     "14 vip.* capabilities, the service manifest and its events registered in openvibe-contracts v0.19.0 (this repository pins v0.92.0)",
     "per-actor limits on /api/v1 (openvibe-sdk/limits)",
-    "the Billing client (server/billing-client.js) is a thin wrapper over openvibe-sdk/commerce (openvibe-sdk v0.28.0), shared with Tips: same capabilities, idempotency keys and retry-once-on-401",
+    "the Billing client (server/billing-client.js) is a thin wrapper over openvibe-sdk/commerce (openvibe-sdk v0.35.0), shared with Tips: same capabilities, idempotency keys and retry-once-on-401",
     "renewal/refund convergence via Billing events: a per-period charge ledger (vip_membership_periods, unique per Billing transaction; reversals and reversal-before-grant tombstones), a past_due renewal grace that never authorizes (answer.grace), and a period audit that doubts a paid period without a record (migration 0002; docs/cutover-0002-renewal-periods.md)",
     "crawler and AI-reader artifacts: /llms-full.txt serves the full text of the home, public creator and plan-terms pages (openvibe-shared/seo, cached 3600 s), and IndexNow (openvibe-shared/indexnow, INDEXNOW_KEY) serves its key file at /<key>.txt and pings the creator page, terms page and sitemap when a plan is published, edited or archived"
   ],
