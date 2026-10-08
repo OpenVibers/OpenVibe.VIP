@@ -6,7 +6,7 @@
   "deployment": "Deployed internally, not launched: deployed with `sudo ovhost deploy vip`, /opt/openvibe.vip, unit openvibe-vip, 127.0.0.1:4620 loopback only; https://openvibe.vip still serves the OpenVibe.Sites placeholder. Principal vip; three Events subscriptions for Billing's events (secret rotated 2026-09-24); checkout closed (VIP_CHECKOUT_PROVIDERS empty). On 2026-09-24 production held the Live import: 44 creators, 43 plans (one per creator), 0 memberships while Billing runs in shadow.",
   "contracts": "openvibe-contracts v0.112.0",
   "sdk": "openvibe-sdk v0.35.0",
-  "shared": "openvibe-shared v2.13.0",
+  "shared": "openvibe-shared v2.13.2",
   "plan": "OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026)",
   "roadmap": "Wave 10",
   "works": [
@@ -48,5 +48,5 @@
     "per-actor limits (openvibe-sdk/limits)"
   ],
   "runtime": "",
-  "updated": "2026-10-07"
+  "updated": "2026-10-08"
 }
