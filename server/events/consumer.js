@@ -24,9 +24,16 @@ const { http } = require('openvibe-contracts');
 const { parseDelivery, createPgInbox } = require('openvibe-sdk/events');
 const { isUserSubject } = require('../util');
 
+const { TOPICS: ACCOUNT_TOPICS } = require('openvibe-sdk/account-data');
+
 const CONSUMER = 'vip-billing';
 
-function consumerRouter({ domain, config, log = console }) {
+/**
+ * accountData + accountSend: network.account.export_requested and network.account.deleted (ADR-033, subscribed at
+ * boot) go to domain/account-data.js, outside the billing inbox: openvibe-sdk/account-data keeps its own receipt per
+ * export and deletion id and throws when Network should be asked again (answered 500, so Events redelivers).
+ */
+function consumerRouter({ domain, config, log = console, accountData = null, accountSend = null }) {
     const router = express.Router();
     const inbox = createPgInbox(domain.db, { now: domain.now });   // idempotency_receipts: migrations/0001_initial.sql
     const { entitlements, periods } = domain;
@@ -87,6 +94,10 @@ function consumerRouter({ domain, config, log = console }) {
 
     /** Apply one envelope (also used by tests). Returns { duplicate, outcome }. */
     async function apply(event) {
+        if (ACCOUNT_TOPICS.includes(event.event_type)) {
+            if (!accountData || !accountSend) throw new Error('account export and deletion are not configured');
+            return { duplicate: false, outcome: await accountData.apply(event, { send: accountSend }) };
+        }
         const r = await inbox.once(CONSUMER, event.event_id, async () => (event.source !== 'billing' ? 'ignored:source' : await handle(event)));
         return r.duplicate ? { duplicate: true, outcome: null } : { duplicate: false, outcome: r.result };
     }

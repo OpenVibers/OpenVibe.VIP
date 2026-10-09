@@ -27,6 +27,8 @@ const { createKeyProvider, createUserAuth } = require('./network');
 const { createBillingClient } = require('./billing-client');
 const { createVipOutbox } = require('./events/outbox');
 const { consumerRouter } = require('./events/consumer');
+const accountDataLib = require('./domain/account-data');
+const { createNetworkSender } = require('openvibe-sdk/account-data');
 const { createDomain } = require('./domain');
 const { createApiAuth } = require('./api/auth');
 const { v1Router } = require('./api/v1');
@@ -104,7 +106,13 @@ async function createApp(opts = {}) {
     // GET /release.json (ADR-016) and POST /release-metrics: open tabs' update reports into /metrics.
     release.mount(app, { registry: metrics.registry });
 
-    const consumer = consumerRouter({ domain, config, log });
+    // Account export and deletion (ADR-033, domain/account-data.js), pushed to Network's internal routes with VIP's own
+    // client-credentials token; a test injects a stand-in through opts.accountSend.
+    const accountData = accountDataLib.create({ db: domain.db, log });
+    const accountSend = opts.accountSend || (config.oauth.clientSecret
+        ? createNetworkSender({ networkInternalUrl: config.network.internalUrl, clientId: config.oauth.clientId, clientSecret: config.oauth.clientSecret, fetch: fetchImpl })
+        : null);
+    const consumer = consumerRouter({ domain, config, log, accountData, accountSend });
     app.use('/internal', consumer.router);
     // Per-actor limits on /api/v1 (api/actor-limits.js), counted once apiAuth resolved the caller.
     // opts.limitsNow: the limiter's clock (tests).
@@ -142,7 +150,7 @@ async function createApp(opts = {}) {
         return res.status(500).type('html').send(layout.page({ title: 'Error', robots: 'noindex', body: pages.errorPage({ status: 500, title: 'Something went wrong', message: 'This one is on us. Please try again.' }) }));
     });
 
-    Object.assign(app.locals, { config, db, domain, keys, outbox, billing, consumer, metrics, indexnow });
+    Object.assign(app.locals, { config, db, domain, keys, outbox, billing, consumer, metrics, indexnow, accountData });
     return app;
 }
 
