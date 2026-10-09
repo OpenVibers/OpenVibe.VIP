@@ -47,7 +47,7 @@ async function boot(opts = {}) {
     const log = { log: (...a) => logs.push(a.join(' ')), warn: (...a) => logs.push(a.join(' ')), error: (...a) => logs.push(a.join(' ')), debug() {} };
     // One database per boot (PGlite, or VIP_TEST_STORE=pg: the containers), dropped when the boot closes.
     const testdb = opts.testdb || await require('./db').testDb();
-    const app = await createApp({ config, db: testdb.db, now: clock.now, log, indexnow: opts.indexnow });
+    const app = await createApp({ config, db: testdb.db, now: clock.now, log, indexnow: opts.indexnow, accountSend: opts.accountSend });
     const server = await new Promise((resolve) => { const s = http.createServer(app); s.listen(0, '127.0.0.1', () => resolve(s)); });
     const base = `http://127.0.0.1:${server.address().port}`;
     const domain = app.locals.domain;

@@ -80,7 +80,8 @@ Called elsewhere, as the service principal `vip`:
 | Service | Grant | Why |
 |---|---|---|
 | OpenVibe.Billing | `billing.intent.create`, `billing.subscription.manage`, `billing.entitlement.check` | checkout, credit-paid periods and cancel, the authoritative check |
-| OpenVibe.Events | `events.event.publish`; `events.subscription.manage` once (`scripts/subscribe.js`) | the outbox relay; the three subscriptions for Billing's events |
+| OpenVibe.Events | `events.event.publish`; `events.subscription.manage` (`scripts/subscribe.js`, and at boot) | the outbox relay; the three subscriptions for Billing's events; the two account subscriptions (created at boot when missing) |
+| OpenVibe.Network | `network.account.export.contribute`, `network.account.deletion.confirm` (granted last, once this release is live) | account export and deletion (ADR-033) |
 
 ## Run it
 
@@ -344,6 +345,21 @@ a plan that changes tells the engines: publishing, editing a published plan and 
 batches and debounces (one POST per 30 s window). A draft, an unchanged edit, a replayed publish and
 network plans (no public creator page) never ping, and a failed ping never takes a publish down.
 Unset: off — the key route is not mounted and nothing is sent (`test/indexnow.test.js`).
+
+## Account export and deletion (ADR-033)
+
+`network.account.export_requested` and `network.account.deleted` arrive at `POST /internal/events` and are answered by
+`server/domain/account-data.js` (`openvibe-sdk/account-data`), outside the billing inbox, with one receipt per export
+and deletion in `account_data_events`.
+
+- **A member:** the export carries their memberships, preferences, entitlements, checkouts and paid periods. The
+  deletion removes the memberships, preferences, entitlement cache and checkout hand-offs. Paid periods are money
+  records and stay, counted as retained.
+- **A creator:** the export carries their profile, plans, plan versions and perks. Their creator row stays, because
+  plans, perks and other people's memberships reference it, but it is suspended and loses its username, display name
+  and bio. Plans, perks and gated rules lose `created_by`. Plan versions stay whole: they are the immutable terms
+  members joined under.
+- **Billing:** payments, refunds and subscriptions are Billing's records, and its own consumer answers for them.
 
 ## Before and after the Billing cutover
 
