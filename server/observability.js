@@ -33,7 +33,7 @@ function createVipReadiness({ db, keys, config, outbox, now, release = null, fet
             { name: 'valkey', required: false, check: async () => (valkey ? valkey.ready() : { skipped: 'VALKEY_URL not set: per-actor limits count in this process only' }) },
             {
                 name: 'network_jwks', required: false,
-                check: () => (keys.get() ? true : 'Network signing key not loaded yet: tokens cannot be verified'),
+                check: () => (keys.ready() ? true : 'Network signing key not loaded yet: tokens cannot be verified'),
             },
             {
                 name: 'billing', required: false, cacheMs: 15_000, timeoutMs: 2500,
