@@ -36,7 +36,7 @@ const BASE_CSS = `*{box-sizing:border-box}html,body{margin:0;height:100%}body{fo
 .w{height:100%;display:flex;flex-direction:column;justify-content:center;gap:6px;padding:14px 16px;border:1px solid var(--line);border-radius:12px}
 .k{margin:0;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}h1{margin:0;font-size:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .n{margin:0;color:var(--muted)}.n b{color:var(--fg)}ul{margin:0;padding:0;list-style:none;font-size:13px;color:var(--muted)}li{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.b{align-self:flex-start;margin-top:4px;padding:7px 14px;border-radius:8px;background:var(--accent);color:#fff;font-weight:600;text-decoration:none}.b:focus-visible{outline:2px solid var(--fg);outline-offset:2px}`;
+.b{align-self:flex-start;margin-top:4px;padding:7px 14px;border-radius:8px;background:var(--accent-strong, var(--accent, #3472d8));color:var(--on-accent-strong, var(--on-accent, #fff));font-weight:600;text-decoration:none}.b:focus-visible{outline:2px solid var(--fg);outline-offset:2px}`;
 const LIGHT = '--bg:#ffffff;--fg:#0f172a;--muted:#475569;--line:#e2e8f0;--accent:#2563eb';
 const DARK = '--bg:#0b1220;--fg:#e6edf7;--muted:#9aa7bd;--line:rgba(255,255,255,.12);--accent:#3b82f6';
 const STYLES = {
