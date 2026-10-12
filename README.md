@@ -316,7 +316,7 @@ answer, the last count is shown as `stale: true`, or no count at all. VIP never 
 projection, which only holds members someone asked about recently. The dashboard's *Share your
 memberships* card gives the creator the badge and widget HTML and the card URL.
 
-## Pages (server-rendered, useful without JavaScript, shared chrome)
+## Pages (server-rendered, useful without JavaScript, OpenVibe Frame)
 
 `/` directory of creators with published plans · `/:username` a creator's plans (terms, perks,
 Billing's price and period from `GET /api/v1/rates`, join form) · `/:username/plans/:slug` public terms
