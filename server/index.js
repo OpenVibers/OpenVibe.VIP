@@ -10,7 +10,8 @@
  */
 const { loadConfig } = require('./config');
 const { createApp } = require('./app');
-const { gracefulStop } = require('openvibe-sdk/service');
+const { gracefulStop, telemetry } = require('openvibe-sdk/service');
+const { createPgTelemetrySink, startTelemetryRetention } = require('openvibe-sdk/telemetry');
 const { startSubscriptions } = require('openvibe-sdk/account-data');
 
 /**
@@ -30,7 +31,7 @@ function createLifecycle({ server, app, timers = [], exit, signals, extra = [] }
             () => { if (metrics && metrics.stop) metrics.stop(); },
             ...extra,
         ],
-        close: [() => domain.db.close()],
+        close: [async () => { if (app.locals.telemetryRetention) await app.locals.telemetryRetention.stop(); await telemetry.stop(); }, () => domain.db.close()],
     });
 }
 
@@ -61,6 +62,10 @@ async function start() {
         console.log(`[VIP] billing ${config.billing.url}; events relay ${outbox.enabled ? `→ ${config.events.url}` : 'off (outbox accumulates)'}; billing events ${config.events.webhookSecrets.length ? 'accepted' : 'not accepted (VIP_EVENTS_SECRET unset)'}`);
     });
     server.keepAliveTimeout = 65_000;
+    // Request telemetry (openvibe-sdk/service, plan T1): one aggregated sample per route template, method and status
+    // class each minute, stored in telemetry_samples; rows older than 14 days go daily.
+    telemetry.init({ service: 'vip', sink: createPgTelemetrySink({ db: domain.db, log: console }), skipPrefixes: ['/shared'], intervalMs: 60_000 });
+    app.locals.telemetryRetention = startTelemetryRetention({ db: domain.db, log: console, olderThanDays: 14 });
 
     // The two account subscriptions at OpenVibe.Events (ADR-033), created when missing; off without EVENTS_URL,
     // VIP_EVENTS_SECRET or the client secret. The billing.* ones stay scripts/subscribe.js's.
