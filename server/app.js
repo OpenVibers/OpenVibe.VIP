@@ -72,6 +72,7 @@ async function createApp(opts = {}) {
     // HTTP golden signals by route template, process metrics, release_info; GET /metrics answers
     // direct loopback callers only (Track O). Gauges: outbox backlog and projection staleness.
     const metrics = require('openvibe-shared/metrics').instrument(app, { service: 'vip', release: release.release });
+    app.use(require('openvibe-sdk/service').telemetryMiddleware);   // request telemetry: a no-op until server/index.js calls telemetry.init()
     metrics.registry.gauge({ name: 'vip_outbox_pending', help: 'Events waiting in the outbox', collect: async () => await outbox.outbox.pending() });
     metrics.registry.gauge({
         name: 'vip_projection_rows', help: 'Entitlement projection rows by freshness', labelNames: ['state'],
