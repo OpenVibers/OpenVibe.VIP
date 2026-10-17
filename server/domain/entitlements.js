@@ -60,7 +60,7 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
      * Apply what Billing said about (member, creator). Runs in a transaction (joins the caller's).
      * input: { member, creator, kind?, active, expiresAt, cancelAtPeriodEnd?, subscriptionId?,
      *          subscriptionStatus?, graceUntil?, reason, source: 'event'|'billing_check'|'import', eventId?, asOf (ms),
-     *          origin?, checkoutId?, traceparent? }
+     *          origin?, checkoutId?, tier? (Billing's, for filing a membership made elsewhere under the plan of that tier), traceparent? }
      */
     async function apply(input) {
         return await db.tx(async () => {
@@ -97,7 +97,7 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
                     subscription_status = excluded.subscription_status, grace_until = excluded.grace_until, source = excluded.source, last_reason = excluded.last_reason,
                     billing_event_id = excluded.billing_event_id, billing_as_of = excluded.billing_as_of, synced_at = excluded.synced_at,
                     valid_until = excluded.valid_until`).run(next);
-            const { membership } = await memberships.onProjection({ prev, next, reason: input.reason, origin: input.origin, checkoutId: input.checkoutId });
+            const { membership } = await memberships.onProjection({ prev, next, reason: input.reason, origin: input.origin, checkoutId: input.checkoutId, tier: input.tier });
             // A first look that finds no membership is not a change anyone needs to hear about.
             const changed = prev
                 ? (!!prev.active !== !!next.active || prev.expires_at !== next.expires_at || !!prev.cancel_at_period_end !== !!next.cancel_at_period_end

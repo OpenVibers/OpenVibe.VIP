@@ -109,10 +109,16 @@ The three Events subscriptions exist.
   often the plan changes; a new purchase after the membership lapsed takes the current version.
 - Perk rules evaluate the perks of the member's version, not the plan's latest.
 - Renaming a perk never changes published terms (each version keeps its snapshot).
-- Billing sells one channel subscription per (member, creator) today, so a creator has at most **one
-  published plan sold through Billing** (a unique index; a second is refused with
-  `409 vip.plan.billing_product_taken`). Tiers and network memberships need a Billing product first:
-  a network plan (staff) can be published as terms, but checkout answers `409 vip.checkout.unavailable`.
+- **Tiers** (since 2026-10-17, openvibe-contracts 0.201.0): a plan sold through Billing is one tier of the creator's
+  membership (`billing_tier` 1–10, chosen at creation, else the next free one). A creator publishes at most **one plan
+  per tier** (a unique index; a second is refused with `409 vip.plan.billing_product_taken`) and sets each tier's
+  monthly price on Billing (`server/domain/prices.js`, `billing.tier.manage`: the dashboard's "Set price", or
+  `price_cents` on `POST /plans` / `PATCH /plans/:id`). VIP never keeps a price. Tier 1 without a price sells at
+  Billing's default; a higher tier without one cannot be joined. A member holds one tier of a creator at a time
+  (Billing refuses a second while a period runs); a subscription made elsewhere (Live's) is tier 1, and Billing's
+  `tier` on `billing.entitlement.changed` files a membership made without a checkout under that tier's plan.
+  Network memberships still need a Billing product: a network plan (staff) can be published as terms, but checkout
+  answers `409 vip.checkout.unavailable`.
 - Archiving stops new members; existing members keep their terms until Billing ends the membership.
 
 ### The entitlement projection (Billing is the truth)
@@ -206,8 +212,8 @@ handle or `network`.
 | `GET /creators/:ref/card` | — (public) | — | the membership card (below), the same as `/embed/:username/card.json` |
 | `GET /plans?creator=&include=drafts,archived` | `vip.plan.list` for drafts | owner | plans with current/draft versions |
 | `GET /plans/:id`, `GET /plans/:id/versions` | `vip.plan.list` for drafts | owner | a plan; its version history (published versions are public) |
-| `POST /plans` | `vip.plan.create` (body `creator`) | self / staff for `network` | create (v1), optionally `publish` |
-| `PATCH /plans/:id` | `vip.plan.update` | owner | edit → new version |
+| `POST /plans` | `vip.plan.create` (body `creator`) | self / staff for `network` | create (v1) at `tier` (else the next free one), optionally `publish` and `price_cents` (the tier's monthly price, set on Billing) |
+| `PATCH /plans/:id` | `vip.plan.update` | owner | edit → new version; `price_cents` sets the tier's price on Billing (not a term: no new version) |
 | `POST /plans/:id/publish` | `vip.plan.update` | owner | publish the latest version |
 | `POST /plans/:id/archive` | `vip.plan.archive` | owner | archive |
 | `GET /perks?creator=&network=&retired=` | `vip.perk.list` for retired | owner | perks with product bindings |

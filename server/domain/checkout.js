@@ -24,6 +24,8 @@ function billingProblem(err) {
     if (code === 'billing.insufficient_funds') fail(409, 'vip.checkout.insufficient_credit', 'your Vibes credit does not cover this membership');
     if (code === 'billing.provider_disabled' || code === 'billing.invalid_input') fail(409, 'vip.checkout.provider_unavailable', 'that payment method is not available right now');
     if (code === 'billing.self_dealing') fail(422, 'vip.checkout.self', 'you cannot join your own plan');
+    if (code === 'billing.tier_change_unsupported') fail(409, 'vip.checkout.other_tier', 'you already hold another tier of this creator; cancel it and join this one when it ends');
+    if (code === 'billing.tier_unknown' || code === 'billing.tier_archived') fail(409, 'vip.checkout.unavailable', 'this plan has no price on Billing yet, so it cannot be joined');
     if (err.status === 403 || err.status === 401) fail(503, 'vip.billing_unavailable', 'VIP is not allowed to reach Billing for this yet');
     fail(503, 'vip.billing_unavailable', 'Billing is not answering right now; nothing was charged');
 }
@@ -60,7 +62,7 @@ function createCheckout({ db, now, config, billing, creators, plans, entitlement
         if (p === 'credit') {
             let out;
             try {
-                out = await billing.subscribeWithCredit({ subscriber: member, creator: creator.subject, autoRenew, key: `vip:checkout:${id}`, traceparent });
+                out = await billing.subscribeWithCredit({ subscriber: member, creator: creator.subject, tier: Number(plan.billing_tier) || 1, autoRenew, key: `vip:checkout:${id}`, traceparent });
             } catch (e) { await mark({ status: 'failed', error: String(e.code || e.message).slice(0, 200) }); billingProblem(e); }
             const sub = out.subscription || {};
             const ent = out.entitlement || {};
@@ -70,7 +72,7 @@ function createCheckout({ db, now, config, billing, creators, plans, entitlement
                 await entitlements.apply({
                     member, creator: creator.subject, active: !!ent.active, expiresAt: ent.expires_at || sub.current_period_end || null,
                     cancelAtPeriodEnd: !!sub.cancel_at_period_end, subscriptionId: sub.id || null, subscriptionStatus: sub.status || null,
-                    reason: 'granted', source: 'billing_check', asOf: now(), checkoutId: id, traceparent,
+                    reason: 'granted', source: 'billing_check', asOf: now(), checkoutId: id, tier: ent.tier, traceparent,
                 });
                 const txn = out.transaction && out.transaction.id;
                 if (txn) {
@@ -86,7 +88,7 @@ function createCheckout({ db, now, config, billing, creators, plans, entitlement
         let out;
         try {
             out = await billing.createIntent({
-                provider: p, subject: member, creator: creator.subject, autoRenew,
+                provider: p, subject: member, creator: creator.subject, tier: Number(plan.billing_tier) || 1, autoRenew,
                 successUrl: successUrl || `${config.baseUrl}/me?joined=${encodeURIComponent(creator.username || '')}`,
                 cancelUrl: cancelUrl || `${config.baseUrl}/${encodeURIComponent(creator.username || '')}`,
                 key: `vip:checkout:${id}`, traceparent,

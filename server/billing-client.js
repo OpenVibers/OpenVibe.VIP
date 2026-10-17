@@ -27,22 +27,27 @@ const CAPS = {
     intent: 'billing.intent.create',
     subscription: 'billing.subscription.manage',
     entitlement: 'billing.entitlement.check',
+    tier: 'billing.tier.manage',
 };
 
 function createBillingClient(config, { fetchImpl = globalThis.fetch, tokenClients = null } = {}) {
     const commerce = createCommerceClient(config, {
         fetchImpl,
-        caps: { intent: CAPS.intent, subscription: CAPS.subscription, entitlement: CAPS.entitlement },
+        caps: { intent: CAPS.intent, subscription: CAPS.subscription, entitlement: CAPS.entitlement, tier: CAPS.tier },
         tokenClients,
     });
 
     return {
         /** { intent, checkout_url } — a subscription checkout for `subject` to `creator`. */
-        createIntent: async ({ provider, subject, creator, autoRenew, successUrl, cancelUrl, key, traceparent }) => await commerce.createIntent({
-            provider, kind: 'subscription', subject, creator, autoRenew, successUrl, cancelUrl, key, traceparent,
+        createIntent: async ({ provider, subject, creator, tier, autoRenew, successUrl, cancelUrl, key, traceparent }) => await commerce.createIntent({
+            provider, kind: 'subscription', subject, creator, tier, autoRenew, successUrl, cancelUrl, key, traceparent,
         }),
-        /** { subscription, entitlement, transaction } — one period paid from the member's credit. */
-        subscribeWithCredit: async ({ subscriber, creator, autoRenew, key, traceparent }) => await commerce.subscribeWithCredit({ subscriber, creator, autoRenew, key, traceparent }),
+        /** { subscription, entitlement, transaction } — one period paid from the member's credit, at the tier's price. */
+        subscribeWithCredit: async ({ subscriber, creator, tier, autoRenew, key, traceparent }) => await commerce.subscribeWithCredit({ subscriber, creator, tier, autoRenew, key, traceparent }),
+        /** A creator's tier prices on Billing: { tiers: [{ tier, price_cents, status }], default_price_cents, min/max_price_cents, max_tiers }. */
+        listTiers: async (creator) => await commerce.listTiers(creator),
+        /** { tier } — set one tier's monthly price (billing.tier.manage). */
+        setTier: async ({ creator, tier, priceCents, status, key, traceparent }) => await commerce.setTier({ creator, tier, priceCents, status, key, traceparent }),
         cancelSubscription: async ({ id, key, traceparent }) => await commerce.cancelSubscription({ id, key, traceparent }),
         getSubscription: async (id) => await commerce.getSubscription(id),
         listSubscriptions: async ({ streamer, subscriber, status } = {}) => await commerce.listSubscriptions({ streamer, subscriber, status }),

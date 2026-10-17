@@ -73,7 +73,13 @@ async function startBilling(network, clock) {
     const periods = [];              // { sub_id, subject, scope, starts, ends, revoked, txn }
     const idem = new Map();
     const calls = [];
-    const state = { down: false, frozen: false, credit: new Map() };
+    const state = { down: false, frozen: false, credit: new Map(), tiers: new Map() };   // tiers: creator → Map(tier → { price_cents, status })
+    /** Billing's tier price (contracts 0.201.0): a row, else tier 1 at the default 499; [status, code] when not for sale. */
+    function tierPrice(creator, tier) {
+        const row = (state.tiers.get(creator) || new Map()).get(tier);
+        if (row) return row.status === 'active' ? row.price_cents : [409, 'billing.tier_archived'];
+        return tier === 1 ? 499 : [422, 'billing.tier_unknown'];
+    }
     const now = () => clock.now();
     const iso = (ms) => new Date(ms).toISOString();
     let seq = 0;
@@ -95,12 +101,13 @@ async function startBilling(network, clock) {
         const s = byPair(subject, scope);
         return {
             subject: { type: 'user', id: subject }, streamer: { type: 'user', id: scope }, kind: 'channel_subscription', active: !!exp, expires_at: exp ? iso(exp) : null,
+            tier: s ? s.tier || 1 : null,
             subscription: s ? { id: s.id, status: s.status, auto_renew: s.auto_renew, cancel_at_period_end: s.cancel_at_period_end, provider: s.provider } : null,
         };
     }
     const present = (s) => ({
-        id: s.id, subscriber: { type: 'user', id: s.subscriber }, streamer: { type: 'user', id: s.streamer }, tier: 1, provider: s.provider,
-        status: s.status, auto_renew: s.auto_renew, cancel_at_period_end: s.cancel_at_period_end, price_cents: 499,
+        id: s.id, subscriber: { type: 'user', id: s.subscriber }, streamer: { type: 'user', id: s.streamer }, tier: s.tier || 1, provider: s.provider,
+        status: s.status, auto_renew: s.auto_renew, cancel_at_period_end: s.cancel_at_period_end, price_cents: s.price_cents || 499,
         current_period_end: s.current_period_end, created_at: s.created_at, updated_at: s.updated_at, legacy_live_id: s.legacy_live_id ?? null,
     });
     function envelope(type, subject, payload) {
@@ -112,7 +119,7 @@ async function startBilling(network, clock) {
     const entEvent = (member, creator, reason, extra = {}) => envelope('billing.entitlement.changed', { type: 'entitlement', id: `${member}:channel_subscription:${creator}` }, { ...entitlement(member, creator), reason, ...extra });
 
     /** Pay one period (grant or renew). Returns { sub, events }. */
-    function pay(member, creator, { provider = 'credit', autoRenew = true, legacyLiveId = null } = {}) {
+    function pay(member, creator, { provider = 'credit', autoRenew = true, legacyLiveId = null, tier = null, priceCents = null } = {}) {
         const t = now();
         let s = byPair(member, creator);
         const renewal = !!(s && s.status === 'active');
@@ -124,6 +131,7 @@ async function startBilling(network, clock) {
             subs.set(s.id, s);
         }
         Object.assign(s, { status: 'active', auto_renew: autoRenew, cancel_at_period_end: false, current_period_end: iso(end), updated_at: iso(t) });
+        if (tier != null) Object.assign(s, { tier, price_cents: priceCents || s.price_cents || 499 });
         periods.push({ sub_id: s.id, subject: member, scope: creator, starts: start, ends: end, revoked: false, txn });
         return { sub: s, txn, events: [envelope('billing.transaction.settled', { type: 'transaction', id: txn }, { transaction_id: txn, type: 'subscription', from_subject: member, to_subject: creator }), entEvent(member, creator, renewal ? 'renewed' : 'granted', { transaction_id: txn })] };
     }
@@ -182,8 +190,13 @@ async function startBilling(network, clock) {
             if (replay()) return undefined;
             if (body.subject.id === body.streamer.id) return send(res, 422, { code: 'billing.self_dealing' });
             if (!['powerchat', 'stripe'].includes(body.provider)) return send(res, 409, { code: 'billing.provider_disabled' });
+            const tier = Number(body.tier || 1);
+            const price = tierPrice(body.streamer.id, tier);
+            if (Array.isArray(price)) return send(res, price[0], { code: price[1] });
+            const held = byPair(body.subject.id, body.streamer.id);
+            if (held && held.status === 'active' && (held.tier || 1) !== tier) return send(res, 409, { code: 'billing.tier_change_unsupported' });
             const id = nextId('pi');
-            const intent = { id, provider: body.provider, kind: 'subscription', subject: body.subject, streamer: body.streamer, amount_cents: body.provider === 'powerchat' ? 549 : 499, status: 'created', checkout_ref: body.provider === 'powerchat' ? `pcsub:${id}` : undefined };
+            const intent = { id, provider: body.provider, kind: 'subscription', subject: body.subject, streamer: body.streamer, tier, amount_cents: body.provider === 'powerchat' ? Math.round(price * 1.1) : price, status: 'created', checkout_ref: body.provider === 'powerchat' ? `pcsub:${id}` : undefined };
             return store(201, { intent, checkout_url: body.provider === 'stripe' ? `https://checkout.stripe.test/${id}` : null });
         }
         if (p === '/api/v1/subscriptions' && req.method === 'POST') {
@@ -192,10 +205,15 @@ async function startBilling(network, clock) {
             if (state.frozen) return send(res, 503, { code: 'billing.frozen' });
             const member = body.subscriber.id; const creator = body.streamer.id;
             if (member === creator) return send(res, 422, { code: 'billing.self_dealing' });
+            const tier = Number(body.tier || 1);
+            const price = tierPrice(creator, tier);
+            if (Array.isArray(price)) return send(res, price[0], { code: price[1] });
+            const held = byPair(member, creator);
+            if (held && held.status === 'active' && (held.tier || 1) !== tier) return send(res, 409, { code: 'billing.tier_change_unsupported' });
             const credit = state.credit.get(member) || 0;
-            if (credit < 499) return send(res, 409, { code: 'billing.insufficient_funds', detail: 'not enough credit' });
-            state.credit.set(member, credit - 499);
-            const out = pay(member, creator, { autoRenew: body.auto_renew !== false });
+            if (credit < price) return send(res, 409, { code: 'billing.insufficient_funds', detail: 'not enough credit' });
+            state.credit.set(member, credit - price);
+            const out = pay(member, creator, { autoRenew: body.auto_renew !== false, tier, priceCents: price });
             state.lastEvents = out.events;
             return store(201, { subscription: present(out.sub), entitlement: entitlement(member, creator), transaction: { id: out.txn } });
         }
@@ -221,6 +239,26 @@ async function startBilling(network, clock) {
             const q = Object.fromEntries(u.searchParams);
             const list = [...subs.values()].filter((s) => (!q.streamer || s.streamer === q.streamer) && (!q.subscriber || s.subscriber === q.subscriber) && (!q.status || s.status === q.status));
             return send(res, 200, { subscriptions: list.map(present) });
+        }
+        m = p.match(/^\/api\/v1\/tiers\/([^/]+)$/);
+        if (m && req.method === 'GET') {
+            const e = auth(req, null);
+            if (e) return send(res, e[0], e[1]);
+            const tiers = [...(state.tiers.get(m[1]) || new Map()).entries()].sort((a, b) => a[0] - b[0]).map(([tier, r]) => ({ tier, price_cents: r.price_cents, status: r.status }));
+            return send(res, 200, { streamer: { type: 'user', id: m[1] }, tiers, default_price_cents: 499, min_price_cents: 100, max_price_cents: 50000, max_tiers: 10 });
+        }
+        m = p.match(/^\/api\/v1\/tiers\/([^/]+)\/(\d+)$/);
+        if (m && req.method === 'PUT') {
+            if (!need('billing.tier.manage')) return undefined;
+            if (!req.headers['idempotency-key']) return send(res, 400, { code: 'idempotency.key_required' });
+            if (replay()) return undefined;
+            if (state.frozen) return send(res, 503, { code: 'billing.frozen' });
+            const cents = Number(body.price_cents);
+            if (!Number.isSafeInteger(cents) || cents < 100 || cents > 50000) return send(res, 422, { code: 'billing.invalid_amount', detail: 'price_cents must be from 100 to 50000' });
+            if (!state.tiers.has(m[1])) state.tiers.set(m[1], new Map());
+            const row = { price_cents: cents, status: body.status || 'active' };
+            state.tiers.get(m[1]).set(Number(m[2]), row);
+            return store(200, { tier: { tier: Number(m[2]), ...row } });
         }
         m = p.match(/^\/api\/v1\/entitlements\/([^/]+)$/);
         if (m && req.method === 'GET') {

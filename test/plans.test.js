@@ -110,11 +110,15 @@ const { test, run } = harness('plans');
         assert.strictEqual((await t.domain.plans.version(m.plan_version_id)).version, 3);
     });
 
-    test('Billing sells one channel subscription per creator: a second published plan is refused', async () => {
-        const res = await t.call('POST', '/api/v1/plans', { user: creator, body: { name: 'Second', publish: true } });
+    test('one published plan per tier: a second plan at tier 1 is refused; without a tier it takes the next free one', async () => {
+        const res = await t.call('POST', '/api/v1/plans', { user: creator, body: { name: 'Second', tier: 1, publish: true } });
         assert.strictEqual(res.status, 409);
         assert.strictEqual(res.json.code, 'vip.plan.billing_product_taken');
-        const draft = await t.call('POST', '/api/v1/plans', { user: creator, body: { name: 'Second' } });
+        const next = await t.call('POST', '/api/v1/plans', { user: creator, body: { name: 'Superfan' } });
+        assert.strictEqual(next.status, 201, next.text);
+        assert.strictEqual(next.json.plan.tier, 2);
+        assert.strictEqual((await t.call('POST', '/api/v1/plans', { user: creator, body: { name: 'Eleven', tier: 11 } })).status, 422);
+        const draft = await t.call('POST', '/api/v1/plans', { user: creator, body: { name: 'Second', tier: 1 } });
         assert.strictEqual(draft.status, 201);
         assert.strictEqual((await t.call('POST', `/api/v1/plans/${draft.json.plan.id}/publish`, { user: creator })).status, 409);
         assert.strictEqual((await t.call('POST', `/api/v1/plans/${plan.id}/archive`, { user: creator })).status, 200);

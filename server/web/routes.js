@@ -38,7 +38,7 @@ const LLMS_FULL_TTL_MS = 3600 * 1000;
 
 function createWebRoutes({ domain, config, layout, userAuth }) {
     const router = express.Router();
-    const { creators, plans, perks, memberships, entitlements, policies, checkout, billing } = domain;
+    const { creators, plans, perks, memberships, entitlements, policies, checkout, billing, prices } = domain;
     const forms = createForms({ secret: config.formSecret, now: domain.now });
     const isStaff = (v) => !!v && v.staff === true;
     router.use(viewerMiddleware(userAuth));
@@ -52,6 +52,17 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
     }
 
     const send = (res, status, o) => res.status(status).type('html').send(layout.page(o));
+    const dollars = (cents) => `$${(cents / 100).toFixed(2)}`;
+    /** A price typed in a form ("4.99", "$5"): cents, or null when left blank; anything else is refused. */
+    function priceInput(v, { required = false } = {}) {
+        if (v == null || String(v).trim() === '') {
+            if (required) throw new VipError(422, 'vip.invalid_input', 'Type a monthly price, like 4.99.');
+            return null;
+        }
+        const cents = prices.centsFromDollars(v);
+        if (cents == null || cents <= 0) throw new VipError(422, 'vip.invalid_input', 'Type the monthly price in dollars and cents, like 4.99.');
+        return cents;
+    }
     const notFound = (req, res) => send(res, 404, { title: 'Not found', robots: 'noindex', viewer: req.viewer, body: pages.errorPage({ status: 404, title: 'Nothing here', message: 'That page does not exist.' }) });
     // Notices ride in the redirect (?ok= / ?error=) and carry an HMAC of their text, so a crafted
     // link cannot put words of its choosing on a VIP page (e.g. "send your Vibes to …").
@@ -215,7 +226,9 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
             let creator;
             try { creator = await dashCreator(req); } catch (e) { return send(res, 403, { title: 'Dashboard', robots: 'noindex,nofollow', viewer: req.viewer, body: pages.errorPage({ status: 403, title: 'Not allowed', message: e.detail }) }); }
             const isNetwork = creator.kind === 'network';
-            const planRows = (await Promise.all((await plans.list({ creatorId: creator.id, includeDrafts: true, includeArchived: true })).map(async (p) => await plans.present(p, { withVersions: true }))));
+            const planList = (await Promise.all((await plans.list({ creatorId: creator.id, includeDrafts: true, includeArchived: true })).map(async (p) => await plans.present(p, { withVersions: true }))));
+            const planRows = isNetwork ? planList : await prices.withPrices(creator.subject, planList);
+            const priceTable = isNetwork ? null : await prices.forCreator(creator.subject);
             const allPerks = (await Promise.all((await perks.list({ creatorId: creator.id })).map(async (p) => await perks.present(p, { withBindings: false }))));
             const ownPerks = (await Promise.all((await perks.list({ creatorId: creator.id, includeNetwork: false, includeRetired: true })).map(async (p) => await perks.present(p))));
             let members = [];
@@ -233,7 +246,7 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
             send(res, 200, {
                 title: isNetwork ? 'Network plans' : 'Dashboard', active: 'dashboard', robots: 'noindex,nofollow', canonicalPath: '/dashboard', viewer: req.viewer,
                 body: pages.dashboard({
-                    viewer: req.viewer, creator, isNetwork, isStaff: isStaff(req.viewer), plans: planRows, allPerks, ownPerks, members, membersSource,
+                    viewer: req.viewer, creator, isNetwork, isStaff: isStaff(req.viewer), plans: planRows, allPerks, ownPerks, members, membersSource, priceTable,
                     rules: isNetwork ? [] : await Promise.all((await policies.list(creator.id)).map(policies.present)), token: forms.token(req.viewer.subject), query: req.query, base: isNetwork ? '/dashboard/network' : '/dashboard',
                     embeds: !isNetwork && creator.username ? domain.cards.urls(creator) : null,
                 }),
@@ -255,8 +268,18 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
         post(`${base}/plans`, async (req, res, to) => {
             withAs(req);
             const c = await dashCreator(req);
-            const plan = await plans.create({ creatorId: c.id, name: req.body.name, description: req.body.description, benefits: lines(req.body.benefits), perks: list(req.body.perks), publish: bool(req.body.publish), actor: req.viewer.subject, traceparent: req.ov.traceparent });
-            back(res, to, 'ok', `Plan created${plan.status === 'published' ? ' and published' : ''}.`);
+            const cents = priceInput(req.body.price);
+            const plan = await plans.create({ creatorId: c.id, name: req.body.name, description: req.body.description, benefits: lines(req.body.benefits), perks: list(req.body.perks), tier: req.body.tier || undefined, publish: bool(req.body.publish), actor: req.viewer.subject, traceparent: req.ov.traceparent });
+            if (cents != null && plan.billing_kind) await prices.set(c, plan, cents, { traceparent: req.ov.traceparent });
+            back(res, to, 'ok', `Plan created${plan.status === 'published' ? ' and published' : ''}${cents != null && plan.billing_kind ? ` at ${dollars(cents)} a month` : ''}.`);
+        }, opts);
+        // The plan's tier price, kept and charged by Billing (domain/prices.js).
+        post(`${base}/plans/:id/price`, async (req, res, to) => {
+            const plan = await plans.byId(req.params.id);
+            const c = await own(req, plan);
+            const cents = priceInput(req.body.price, { required: true });
+            await prices.set(c, plan, cents, { traceparent: req.ov.traceparent });
+            back(res, to, 'ok', `Price set: ${dollars(cents)} a month for new members. Current members keep the price they joined at.`);
         }, opts);
         post(`${base}/plans/:id`, async (req, res, to) => {
             const plan = await plans.byId(req.params.id);
@@ -314,7 +337,7 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
             const c = await creators.byUsername(req.params.username);
             if (!c || c.status !== 'active') return notFound(req, res);
             if (c.username !== req.params.username) return res.redirect(301, `/${encodeURIComponent(c.username)}`);
-            const list = (await Promise.all((await plans.list({ creatorId: c.id })).map(async (p) => await plans.present(p))));
+            const list = await prices.withPrices(c.subject, (await Promise.all((await plans.list({ creatorId: c.id })).map(async (p) => await plans.present(p)))));
             const isOwner = !!(req.viewer && req.viewer.subject === c.subject);
             const member = req.viewer && !isOwner ? await entitlements.check(req.viewer.subject, c.subject, { mode: 'auto' }) : null;
             const name = c.display_name || c.username;

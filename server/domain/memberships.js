@@ -27,7 +27,7 @@ function createMemberships({ db, now, creators, plans }) {
     }
 
     /** Record the version a membership is under. Inside the projection's transaction. */
-    async function onProjection({ prev, next, reason, origin = null, checkoutId = null }) {
+    async function onProjection({ prev, next, reason, origin = null, checkoutId = null, tier = null }) {
         const creator = await creators.bySubject(next.creator_subject) || await creators.ensure({ subject: next.creator_subject, origin: 'system' });
         const member = next.member_subject;
         let m = await get(member, creator.id);
@@ -54,7 +54,7 @@ function createMemberships({ db, now, creators, plans }) {
             planId = checkout.plan_id; versionId = checkout.plan_version_id; how = 'checkout';
             await db.prepare("UPDATE vip_checkouts SET status = 'used', billing_subscription_id = COALESCE(billing_subscription_id, ?), updated_at = ? WHERE id = ?").run(next.subscription_id || null, at, checkout.id);
         } else {
-            const plan = await plans.purchasable(creator.id, next.kind === 'channel_subscription' ? 'channel_subscription' : next.kind);
+            const plan = await plans.purchasable(creator.id, next.kind === 'channel_subscription' ? 'channel_subscription' : next.kind, tier || 1);
             if (plan) { planId = plan.id; versionId = plan.current_version_id; }
         }
         if (m) {
