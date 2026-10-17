@@ -100,7 +100,12 @@ function v1Router({ domain, apiAuth, limits }) {
         return userSubject(value, 'subject');
     }
 
-    const presentPlanFull = async (plan) => ({ ...await plans.present(plan), creator: creators.present(await creators.byId(plan.creator_id)) });
+    // Plans as presented, with each tier's price from Billing (domain/prices.js) when the creator sells through it.
+    const priced = async (c, list) => (c && c.kind === 'creator' && c.subject ? await domain.prices.withPrices(c.subject, list) : list);
+    const presentPlanFull = async (plan) => {
+        const c = await creators.byId(plan.creator_id);
+        return { ...(await priced(c, [await plans.present(plan)]))[0], creator: creators.present(c) };
+    };
     const trace = (req) => req.ov && req.ov.traceparent;
 
     // ── Creators (public) ────────────────────────────────────
@@ -110,7 +115,7 @@ function v1Router({ domain, apiAuth, limits }) {
         const own = mayManage(req.principal, c, CAP.planList);
         res.json({
             creator: creators.present(c),
-            plans: (await Promise.all((await plans.list({ creatorId: c.id, includeDrafts: own })).map(async (p) => await plans.present(p)))),
+            plans: await priced(c, (await Promise.all((await plans.list({ creatorId: c.id, includeDrafts: own })).map(async (p) => await plans.present(p))))),
             perks: (await Promise.all((await perks.list({ creatorId: c.id, includeNetwork: false })).map(async (p) => await perks.present(p)))),
         });
     }));
@@ -129,7 +134,7 @@ function v1Router({ domain, apiAuth, limits }) {
         const include = String(req.query.include || '').split(',');
         const own = mayManage(req.principal, c, CAP.planList);
         const list = await plans.list({ creatorId: c.id, includeDrafts: own && include.includes('drafts'), includeArchived: own && include.includes('archived') });
-        res.json({ creator: creators.present(c), plans: (await Promise.all(list.map(async (p) => await plans.present(p)))) });
+        res.json({ creator: creators.present(c), plans: await priced(c, (await Promise.all(list.map(async (p) => await plans.present(p))))) });
     }));
     const visiblePlan = async (req, id) => {
         const plan = await plans.byId(id);
@@ -150,8 +155,9 @@ function v1Router({ domain, apiAuth, limits }) {
         const actor = req.principal.kind === 'service' ? req.principal.sub : req.principal.subject;
         const plan = await plans.create({
             creatorId: c.id, slug: b.slug, name: b.name, description: b.description, benefits: b.benefits, perks: b.perks,
-            billingKind: b.billing_kind, publish: bool(b.publish), changeNote: b.change_note, actor, traceparent: trace(req),
+            billingKind: b.billing_kind, tier: b.tier, publish: bool(b.publish), changeNote: b.change_note, actor, traceparent: trace(req),
         });
+        if (b.price_cents != null && plan.billing_kind) await domain.prices.set(c, plan, b.price_cents, { traceparent: trace(req) });
         res.status(201).json({ plan: await presentPlanFull(plan) });
     }));
     const managedPlan = async (req, cap) => {
@@ -164,6 +170,8 @@ function v1Router({ domain, apiAuth, limits }) {
         const plan = await managedPlan(req, CAP.planUpdate);
         const b = req.body || {};
         const actor = req.principal.kind === 'service' ? req.principal.sub : req.principal.subject;
+        // price_cents: the plan's tier price, kept and charged by Billing (not a plan term, so no new version).
+        if (b.price_cents != null) await domain.prices.set(await creators.byId(plan.creator_id), plan, b.price_cents, { traceparent: trace(req) });
         const out = await plans.update(plan.id, { name: b.name, description: b.description, benefits: b.benefits, perks: b.perks, changeNote: b.change_note, actor, traceparent: trace(req) });
         res.json({ plan: await presentPlanFull(out.plan), version: await plans.presentVersion(out.version), unchanged: out.unchanged });
     }));

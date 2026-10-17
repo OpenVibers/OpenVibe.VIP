@@ -9,15 +9,17 @@
  * members buy; members who joined earlier keep the version they bought (vip_memberships).
  *
  * Prices are not plan terms here: Billing prices and charges a subscription, and records what each
- * period cost. A plan says which Billing product it is sold as (billing_kind), and Billing sells one
- * channel subscription per (member, creator) today, so a creator has at most one published plan
- * bound to it. A plan with no Billing product (a network plan today) can be published as terms, but
- * has no checkout until Billing sells it.
+ * period cost. A plan says which Billing product it is sold as (billing_kind) and at which tier
+ * (billing_tier, 1 to MAX_TIER, fixed when the plan is created): a creator publishes at most one plan per tier,
+ * and sets each tier's monthly price on Billing (domain/prices.js, billing.tier.manage). A member holds one
+ * tier of a creator at a time. A plan with no Billing product (a network plan today) can be published as
+ * terms, but has no checkout until Billing sells it.
  */
 const crypto = require('crypto');
 const { fail, prefixedId, iso, text, slug, slugify, json } = require('../util');
 
 const BILLING_KINDS = ['channel_subscription'];
+const MAX_TIER = 10;
 
 function createPlans({ db, now, outbox, creators, perks, baseUrl = '', indexnow = null }) {
     const byId = async (id) => await db.prepare('SELECT * FROM vip_plans WHERE id = ?').get(id) || null;
@@ -55,7 +57,7 @@ function createPlans({ db, now, outbox, creators, perks, baseUrl = '', indexnow 
         const at = iso(now());
         const id = prefixedId('vpv', now());
         const perkSnap = perkRows.map((p) => ({ key: p.key, name: p.name, kind: p.kind, scope: p.creator_id === 'network' ? 'network' : 'creator' }));
-        const terms = { name, description, benefits, perks: perkSnap, billing_kind: plan.billing_kind, price: plan.billing_kind ? 'set and charged by OpenVibe.Billing' : null };
+        const terms = { name, description, benefits, perks: perkSnap, billing_kind: plan.billing_kind, ...(plan.billing_kind ? { tier: Number(plan.billing_tier) || 1 } : {}), price: plan.billing_kind ? 'set and charged by OpenVibe.Billing' : null };
         terms.digest = crypto.createHash('sha256').update(JSON.stringify([terms.name, terms.description, terms.benefits, terms.perks, terms.billing_kind])).digest('hex').slice(0, 16);
         await db.prepare(`INSERT INTO vip_plan_versions (id, plan_id, version, name, description, benefits, terms, change_note, created_by, created_at, published_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, plan.id, n, name, description, JSON.stringify(benefits), JSON.stringify(terms), changeNote || null, actor, at, publish ? at : null);
@@ -82,14 +84,26 @@ function createPlans({ db, now, outbox, creators, perks, baseUrl = '', indexnow 
     }
 
     function publishConflict(e) {
-        // PostgreSQL unique_violation (23505) on the one-published-plan-per-billing-kind index of vip_plans.
-        if (e && e.code === '23505' && e.table === 'vip_plans' && /\(creator_id, billing_kind\)/.test(e.detail || '')) {
-            fail(409, 'vip.plan.billing_product_taken', 'this creator already has a published plan sold as a channel subscription; Billing sells one per member and creator today, so archive the other plan first');
+        // PostgreSQL unique_violation (23505) on the one-published-plan-per-tier index of vip_plans.
+        if (e && e.code === '23505' && e.table === 'vip_plans' && /\(creator_id, billing_kind, billing_tier\)/.test(e.detail || '')) {
+            fail(409, 'vip.plan.billing_product_taken', 'another published plan is already sold at this tier; archive it first, or create this plan at another tier');
         }
         throw e;
     }
 
-    async function create({ creatorId, slug: s, name, description, benefits, perks: perkRefs, billingKind, publish = false, changeNote, actor = null, traceparent }) {
+    /** A tier from a form or the API: 1..MAX_TIER; when absent, the creator's lowest tier no live plan uses. */
+    async function tierFor(creatorId, value) {
+        if (value != null && value !== '') {
+            const n = Number(value);
+            if (!Number.isSafeInteger(n) || n < 1 || n > MAX_TIER) fail(422, 'vip.invalid_input', `tier must be a whole number from 1 to ${MAX_TIER}`);
+            return n;
+        }
+        const used = new Set((await db.prepare("SELECT billing_tier FROM vip_plans WHERE creator_id = ? AND status <> 'archived' AND billing_kind IS NOT NULL").all(creatorId)).map((r) => Number(r.billing_tier)));
+        for (let t = 1; t <= MAX_TIER; t++) if (!used.has(t)) return t;
+        fail(409, 'vip.plan.tiers_full', `a creator sells at most ${MAX_TIER} tiers; archive a plan first`);
+    }
+
+    async function create({ creatorId, slug: s, name, description, benefits, perks: perkRefs, billingKind, tier, publish = false, changeNote, actor = null, traceparent }) {
         const creator = await creators.byId(creatorId);
         if (!creator) fail(404, 'vip.creator_not_found', `no creator ${creatorId}`);
         const kind = billingKind === undefined ? (creator.kind === 'network' ? null : 'channel_subscription') : (billingKind || null);
@@ -99,12 +113,13 @@ function createPlans({ db, now, outbox, creators, perks, baseUrl = '', indexnow 
         const planSlug = s ? slug(s) : slugify(cleanName);
         if (await db.prepare('SELECT 1 FROM vip_plans WHERE creator_id = ? AND slug = ?').get(creatorId, planSlug)) fail(409, 'vip.plan_exists', `a plan ${planSlug} already exists`);
         const perkRows = await perks.resolveForPlan(creatorId, perkRefs || []);
+        const billingTier = kind ? await tierFor(creatorId, tier) : 1;
         const at = iso(now());
         const id = prefixedId('vpl', now());
         try {
             const plan = await db.tx(async () => {
-                await db.prepare(`INSERT INTO vip_plans (id, creator_id, slug, status, billing_kind, current_version_id, latest_version, created_by, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, NULL, 0, ?, ?, ?)`).run(id, creatorId, planSlug, publish ? 'published' : 'draft', kind, actor, at, at);
+                await db.prepare(`INSERT INTO vip_plans (id, creator_id, slug, status, billing_kind, billing_tier, current_version_id, latest_version, sort, created_by, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, NULL, 0, ?, ?, ?, ?)`).run(id, creatorId, planSlug, publish ? 'published' : 'draft', kind, billingTier, billingTier, actor, at, at);
                 const v = await insertVersion(await byId(id), {
                     name: cleanName, description: text(description, 'description', 2000), benefits: cleanBenefits(benefits) || [],
                     perkRows, changeNote: changeNote || 'created', actor, publish,
@@ -180,8 +195,8 @@ function createPlans({ db, now, outbox, creators, perks, baseUrl = '', indexnow 
         return await db.prepare(`SELECT * FROM vip_plans WHERE creator_id = ? AND status IN (${st.map(() => '?').join(',')}) ORDER BY sort, created_at`).all(creatorId, ...st);
     }
 
-    /** What a new member of this creator buys through Billing's product `kind`. */
-    const purchasable = async (creatorId, kind = 'channel_subscription') => await db.prepare("SELECT * FROM vip_plans WHERE creator_id = ? AND billing_kind = ? AND status = 'published'").get(creatorId, kind) || null;
+    /** What a new member of this creator buys through Billing's product `kind` at `tier` (a subscription made elsewhere, such as Live's, is tier 1). */
+    const purchasable = async (creatorId, kind = 'channel_subscription', tier = 1) => await db.prepare("SELECT * FROM vip_plans WHERE creator_id = ? AND billing_kind = ? AND billing_tier = ? AND status = 'published'").get(creatorId, kind, Number(tier) || 1) || null;
 
     async function presentVersion(v) {
         if (!v) return null;
@@ -198,6 +213,7 @@ function createPlans({ db, now, outbox, creators, perks, baseUrl = '', indexnow 
         const latest = await latestVersion(plan.id);
         return {
             id: plan.id, creator_id: plan.creator_id, slug: plan.slug, status: plan.status, billing_kind: plan.billing_kind,
+            tier: plan.billing_kind ? Number(plan.billing_tier) || 1 : null,
             purchasable: plan.status === 'published' && !!plan.billing_kind,
             current_version: await presentVersion(current),
             draft_version: latest && (!current || latest.version > current.version) ? await presentVersion(latest) : null,
@@ -206,7 +222,7 @@ function createPlans({ db, now, outbox, creators, perks, baseUrl = '', indexnow 
         };
     }
 
-    return { byId, version, latestVersion, versions, versionPerks, create, update, publish, archive, list, purchasable, present, presentVersion, BILLING_KINDS };
+    return { byId, version, latestVersion, versions, versionPerks, create, update, publish, archive, list, purchasable, present, presentVersion, tierFor, BILLING_KINDS, MAX_TIER };
 }
 
 module.exports = { createPlans };

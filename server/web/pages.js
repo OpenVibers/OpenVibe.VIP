@@ -25,10 +25,11 @@ function notice(q) {
     return '';
 }
 
-function priceLine(rates) {
+function priceLine(rates, cents) {
     const sub = rates && rates.subscription;
-    if (!sub || !sub.price_cents) return '<p class="price muted">OpenVibe.Billing sets the price; it is shown at checkout.</p>';
-    return `<p class="price"><b>${money(sub.price_cents)}</b> every ${esc(sub.period_days)} days, charged and renewed by OpenVibe.Billing.</p>`;
+    const price = cents != null ? cents : sub && sub.price_cents;
+    if (!price) return '<p class="price muted">OpenVibe.Billing charges the price; it is shown at checkout.</p>';
+    return `<p class="price"><b>${money(price)}</b> every ${esc((sub && sub.period_days) || 31)} days, charged and renewed by OpenVibe.Billing.</p>`;
 }
 
 function perkList(perks) {
@@ -116,7 +117,7 @@ ${member.membership && member.membership.plan_version ? `<p class="muted">You jo
     const planCards = plans.length ? plans.map((p) => {
         const v = p.current_version;
         const join = !p.purchasable
-            ? '<p class="muted">This plan is not sold through Billing yet.</p>'
+            ? `<p class="muted">${p.billing_kind && p.status === 'published' ? 'This plan has no price yet, so it cannot be joined.' : 'This plan is not sold through Billing yet.'}</p>`
             : isOwner ? '<p class="muted">This is your plan.</p>'
                 : member && member.status === 'active' ? ''
                     : !providers.length ? '<p class="muted">Joining through OpenVibe.Billing is not open yet.</p>'
@@ -127,11 +128,11 @@ ${member.membership && member.membership.plan_version ? `<p class="muted">You jo
 <button type="submit">Join ${esc(v.name)}</button></form>`
                         : `<p><a class="button" href="/auth/login?next=${encodeURIComponent(`/${creator.username}`)}">Sign in to join</a></p>`;
         return `<article class="card plan" id="plan-${esc(p.slug)}">
-<h2>${esc(v.name)}</h2>
+<h2>${esc(v.name)}${plans.filter((x) => x.billing_kind).length > 1 && p.tier ? ` <span class="pill">Tier ${esc(p.tier)}</span>` : ''}</h2>
 ${v.description ? `<p>${esc(v.description)}</p>` : ''}
 ${benefitList(v.benefits)}
 ${v.perks.length ? `<h3>Perks</h3>${perkList(v.perks)}` : ''}
-${p.purchasable ? priceLine(rates) : ''}
+${p.purchasable ? priceLine(rates, p.price_cents) : ''}
 ${join}
 <p class="muted small">Version ${esc(v.version)} · published ${fmtDate(v.published_at)} · <a href="/${encodeURIComponent(creator.username)}/plans/${encodeURIComponent(p.slug)}">terms history</a></p>
 </article>`;
@@ -194,7 +195,7 @@ function perkChoices(allPerks, selectedKeys) {
     return `<fieldset class="perk-choices"><legend>Perks</legend>${allPerks.map((p) => `<label class="check"><input type="checkbox" name="perks" value="${esc(p.key)}"${selectedKeys.includes(p.key) ? ' checked' : ''}> ${esc(p.name)}${p.scope === 'network' ? ' <span class="muted small">(network)</span>' : ''}</label>`).join('')}</fieldset>`;
 }
 
-function planEditor({ plan, allPerks, token, base }) {
+function planEditor({ plan, allPerks, token, base, priceTable }) {
     const v = plan.draft_version || plan.current_version;
     const keys = v ? v.perks.map((p) => p.key) : [];
     const versions = (plan.versions || []).map((x) => `<li>v${esc(x.version)} · ${esc(x.name)} · ${x.published_at ? `published ${fmtDate(x.published_at)}` : 'draft'}${x.change_note ? ` · ${esc(x.change_note)}` : ''}${x.perks.length ? ` · perks: ${x.perks.map((p) => esc(p.key)).join(', ')}` : ''}</li>`).join('');
@@ -203,7 +204,8 @@ function planEditor({ plan, allPerks, token, base }) {
         plan.status !== 'archived' ? `<form method="post" action="${base}/plans/${esc(plan.id)}/archive" class="inline">${csrf(token)}<button type="submit" class="button-quiet">Archive</button></form>` : '',
     ].join(' ');
     return `<article class="card plan-editor"><h3>${esc(v ? v.name : plan.slug)} <span class="pill">${esc(plan.status)}</span></h3>
-<p class="muted small">${plan.billing_kind ? 'Sold through OpenVibe.Billing as a channel subscription.' : 'Not sold through Billing (terms only).'} ${plan.current_version ? `New members buy v${esc(plan.current_version.version)}.` : ''}</p>
+<p class="muted small">${plan.billing_kind ? `Tier ${esc(plan.tier)}, sold through OpenVibe.Billing as a channel subscription${plan.price_cents != null ? ` at <b>${money(plan.price_cents)}</b> a month` : priceTable ? ', with no price yet: set one so members can join' : ''}.` : 'Not sold through Billing (terms only).'} ${plan.current_version ? `New members buy v${esc(plan.current_version.version)}.` : ''}</p>
+${plan.billing_kind && plan.status !== 'archived' ? `<form method="post" action="${base}/plans/${esc(plan.id)}/price" class="inline price-form">${csrf(token)}<label>Monthly price ($) <input name="price" inputmode="decimal" required pattern="\\$?[0-9]{1,6}(\\.[0-9]{1,2})?" size="8" value="${plan.price_cents != null ? esc((plan.price_cents / 100).toFixed(2)) : ''}"${priceTable && priceTable.minCents ? ` placeholder="${esc((priceTable.minCents / 100).toFixed(2))} to ${esc((priceTable.maxCents / 100).toFixed(2))}"` : ''}></label> <button type="submit" class="button-quiet">Set price</button></form>` : ''}
 ${plan.status !== 'archived' ? `<details><summary>Edit (creates version ${esc((plan.versions || []).length + 1)})</summary>
 <form method="post" action="${base}/plans/${esc(plan.id)}">${csrf(token)}
 <label>Name <input name="name" maxlength="80" required value="${esc(v ? v.name : '')}"></label>
@@ -233,7 +235,7 @@ function shareCard({ creator, embeds, hasPlan }) {
 <label>Card for developers (JSON, open to any site) <input readonly value="${esc(embeds.card)}"></label></section>`;
 }
 
-function dashboard({ viewer, creator, isNetwork, isStaff, plans, allPerks, ownPerks, members, membersSource, rules, token, query, base, embeds }) {
+function dashboard({ viewer, creator, isNetwork, isStaff, plans, allPerks, ownPerks, members, membersSource, rules, token, query, base, embeds, priceTable = null }) {
     if (!viewer) {
         return `<section class="card narrow"><h1>Creator dashboard</h1><p>Sign in with your OpenVibe account to offer a membership plan.</p>
 <p><a class="button" href="/auth/login?next=%2Fdashboard">Sign in</a></p></section>`;
@@ -248,14 +250,16 @@ ${isNetwork ? '' : `<section class="card"><h2>Profile</h2><form method="post" ac
 <label class="check"><input type="checkbox" name="show_member_count" value="1"${creator.show_member_count ? ' checked' : ''}> Show how many members you have on your card and widget</label>
 <button type="submit">Save</button></form></section>
 ${shareCard({ creator, embeds, hasPlan: plans.some((p) => p.status === 'published') })}`}
-<section><h2>Plans</h2>${plans.length ? plans.map((p) => planEditor({ plan: p, allPerks, token, base })).join('') : '<p class="muted">No plans yet.</p>'}
+<section><h2>Plans</h2>${plans.length ? plans.map((p) => planEditor({ plan: p, allPerks, token, base, priceTable })).join('') : '<p class="muted">No plans yet.</p>'}
 <details class="card"><summary>New plan</summary><form method="post" action="${base}/plans">${csrf(token)}
 <label>Name <input name="name" maxlength="80" required></label>
 <label>Description <textarea name="description" maxlength="2000" rows="3"></textarea></label>
 <label>Benefits, one per line <textarea name="benefits" rows="3"></textarea></label>
 ${perkChoices(allPerks, [])}
+${isNetwork ? '' : `<label>Tier <select name="tier"><option value="">the next free tier</option>${Array.from({ length: 10 }, (_, i) => `<option value="${i + 1}"${plans.some((p) => p.billing_kind && p.status !== 'archived' && p.tier === i + 1) ? ' disabled' : ''}>Tier ${i + 1}</option>`).join('')}</select></label>
+<label>Monthly price ($) <input name="price" inputmode="decimal" pattern="\\$?[0-9]{1,6}(\\.[0-9]{1,2})?" size="8"${priceTable && priceTable.minCents ? ` placeholder="${esc((priceTable.minCents / 100).toFixed(2))} to ${esc((priceTable.maxCents / 100).toFixed(2))}"` : ''}></label>`}
 <label class="check"><input type="checkbox" name="publish" value="1"> Publish now</label>
-<p class="muted small">${isNetwork ? 'Network plans are terms only until Billing sells a network membership.' : 'A published plan is sold through OpenVibe.Billing as your channel subscription; Billing sets the price. One published plan can be sold at a time.'}</p>
+<p class="muted small">${isNetwork ? 'Network plans are terms only until Billing sells a network membership.' : `Each plan is one tier of your membership, sold through OpenVibe.Billing as your channel subscription at the price you set${priceTable && priceTable.defaultCents ? ` (tier 1 without a price sells at ${money(priceTable.defaultCents)})` : ''}. A member holds one tier at a time; put everything a tier includes in its perks and benefits.`}</p>
 <button type="submit">Create plan</button></form></details></section>
 <section><h2>Perks</h2>
 ${ownPerks.length ? `<ul class="perk-admin">${ownPerks.map((p) => `<li><details><summary><b>${esc(p.name)}</b> <span class="muted small">${esc(p.key)} · ${esc(p.kind)} · ${esc(p.status)}</span></summary>

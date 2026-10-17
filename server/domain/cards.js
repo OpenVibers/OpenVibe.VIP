@@ -4,8 +4,9 @@
  * The public face of a creator's memberships, reused by other products and other sites (roadmap
  * §11.3 "reusable membership badge/card/widget endpoints"; rendered by server/web/embeds.js):
  *
- *   card(creator)    plan names and terms (the current published version), perks, the join and
- *                    terms links, Billing's price, the member count, and the badge and widget URLs
+ *   card(creator)    plan names and terms (the current published version), perks, each plan's tier and
+ *                    Billing's price for it (domain/prices.js), the join and terms links, the member
+ *                    count, and the badge and widget URLs
  *   badge(creator)   what a member's badge reads: the name of the badge perk in the plan new members
  *                    buy ("Subscriber badge" → "Subscriber"), else "Member"
  *
@@ -20,7 +21,7 @@
  */
 const BADGE_SUFFIX = /\s+badge$/i;
 
-function createCards({ db, config, creators, plans, perks, billing, now, log = console }) {
+function createCards({ db, config, creators, plans, perks, billing, prices = null, now, log = console }) {
     const counts = new Map();   // creator id → { at, count, stale, pending }
     let rates = { at: -Infinity, value: null };
 
@@ -61,9 +62,10 @@ function createCards({ db, config, creators, plans, perks, billing, now, log = c
 
     const kindOf = async (perkId) => { const p = await perks.byId(perkId); return p ? p.kind : 'other'; };
 
-    /** The published plans of a creator, each at the version new members buy. */
+    /** The published plans of a creator, each at the version new members buy, with its tier's price. */
     async function publicPlans(c) {
-        return (await Promise.all((await plans.list({ creatorId: c.id })).map(async (p) => await plans.present(p)))).filter((p) => p.current_version);
+        const list = (await Promise.all((await plans.list({ creatorId: c.id })).map(async (p) => await plans.present(p)))).filter((p) => p.current_version);
+        return prices ? await prices.withPrices(c.subject, list) : list;
     }
 
     async function badge(c, list = null) {
@@ -99,19 +101,26 @@ function createCards({ db, config, creators, plans, perks, billing, now, log = c
                 return {
                     id: p.id, slug: p.slug, name: v.name, description: v.description, benefits: v.benefits, version: v.version,
                     perks: (await Promise.all(v.perks.map(async (x) => ({ key: x.key, name: x.name, kind: await kindOf(x.id) })))),
-                    purchasable: p.purchasable,
+                    purchasable: p.purchasable, tier: p.tier,
+                    price_cents: p.price_cents != null ? p.price_cents : null,
                     join_url: `${u.page}#plan-${encodeURIComponent(p.slug)}`,
                     terms_url: `${u.page}/plans/${encodeURIComponent(p.slug)}`,
                 };
             }))),
             join_url: u.page,
             joining_open: joiningOpen,
-            price: sub ? { price_cents: sub.price_cents, period_days: sub.period_days, charged_by: 'OpenVibe.Billing' } : null,
+            // The lowest price a new member can join at (one plan per tier, each priced by Billing).
+            price: sub ? { price_cents: lowest(list, sub), period_days: sub.period_days, charged_by: 'OpenVibe.Billing' } : null,
             members: { count: members.count, shown: members.shown, stale: members.stale },
             badge: { ...await badge(c, list), svg_url: u.badge },
             widget_url: u.widget,
             card_url: u.card,
         };
+    }
+
+    function lowest(list, sub) {
+        const priced = list.filter((p) => p.purchasable && p.price_cents != null).map((p) => p.price_cents);
+        return priced.length ? Math.min(...priced) : sub.price_cents;
     }
 
     return { card, badge, memberCount, publicPlans, urls };

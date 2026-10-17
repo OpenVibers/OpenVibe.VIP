@@ -30,11 +30,12 @@
   ],
   "not_yet": [
     "no membership sold yet: the first real purchase through Billing (PowerChat or Vibes credit) is the end-to-end proof still due",
-    "Billing sells one channel subscription per member and creator: one purchasable plan per creator, no tiers, no network membership product",
-    "revocations reach Chat and Community through vip.membership.changed subscriptions (2026-09-24); Blog and Live still converge by the cache TTL (30-60 s)"
+    "revocations reach Chat and Community through vip.membership.changed subscriptions (2026-09-24); Blog and Live still converge by the cache TTL (30-60 s)",
+    "no network membership product on Billing yet (OpenVibe Premium sold on openvibe.vip): a network plan is terms only"
   ],
   "features": [
     "plans with immutable versions, perks and product bindings",
+    "tiers: one plan per tier (1-10), each priced by the creator on Billing (billing.tier.manage); a member holds one tier at a time",
     "entitlement projection from Billing events with valid_until, grace and a Billing fallback; unknown never authorizes",
     "checkout and cancel through OpenVibe.Billing",
     "gated-resource policy evaluation for products (fails closed)",

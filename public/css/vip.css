@@ -38,6 +38,9 @@ form input:not([type=checkbox]):not([type=hidden]), form textarea, form select {
 form label.check { display: flex; align-items: center; gap: 8px; }
 form.inline { display: inline-block; margin: 4px 6px 4px 0; }
 form.join { display: grid; gap: 4px; max-width: 420px; }
+form.price-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin: 8px 0; }
+form.price-form label { margin: 0; }
+form.price-form input:not([type=hidden]) { width: 9em; }
 fieldset { border: 1px solid var(--vip-border); border-radius: 8px; margin: 12px 0; }
 details > summary { cursor: pointer; font-weight: 600; margin: 6px 0; }
 .notice { background: rgba(59, 130, 246, .12); border: 1px solid rgba(59, 130, 246, .4); border-radius: 8px; padding: 10px 14px; }

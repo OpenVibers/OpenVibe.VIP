@@ -63,6 +63,7 @@ function consumerRouter({ domain, config, log = console, accountData = null, acc
                 member, creator, active: !!p.active && !reversed, expiresAt: p.expires_at || null,
                 cancelAtPeriodEnd: sub ? !!sub.cancel_at_period_end : undefined, subscriptionId: sub ? sub.id : undefined,
                 subscriptionStatus: sub ? sub.status : undefined, graceUntil: p.grace_until || undefined, reason: p.reason || null, source: 'event', eventId: event.event_id, asOf,
+                tier: p.tier || undefined,
             });
             if (reversed) await entitlements.doubt(member, creator);
             return out.outcome;
