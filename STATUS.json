@@ -3,7 +3,7 @@
   "stage": "alpha",
   "code": true,
   "deployed": true,
-  "deployment": "Deployed internally, not launched: deployed with `sudo ovhost deploy vip`, /opt/openvibe.vip, unit openvibe-vip, 127.0.0.1:4620 loopback only; https://openvibe.vip still serves the OpenVibe.Sites placeholder. Principal vip; three Events subscriptions for Billing's events (secret rotated 2026-09-24); checkout closed (VIP_CHECKOUT_PROVIDERS empty). On 2026-09-24 production held the Live import: 44 creators, 43 plans (one per creator), 0 memberships while Billing runs in shadow.",
+  "deployment": "Launched 2026-10-17 at https://openvibe.vip (openvibe-contracts 0.200.0 made VIP live; vhost deploy/nginx/openvibe.vip.conf installed): deployed with `sudo ovhost deploy vip`, /opt/openvibe.vip, unit openvibe-vip, 127.0.0.1:4620 behind nginx. Principal vip; three Events subscriptions for Billing's events. Checkout open since the Billing cutover (VIP_CHECKOUT_PROVIDERS=powerchat,credit): 43 plans imported from Live, 0 memberships sold on launch day.",
   "contracts": "openvibe-contracts v0.200.0",
   "sdk": "openvibe-sdk v0.50.1",
   "shared": "openvibe-shared v4.3.0",
@@ -29,8 +29,7 @@
     "crawler and AI-reader artifacts: /llms-full.txt serves the full text of the home, public creator and plan-terms pages (openvibe-shared/seo, cached 3600 s), and IndexNow (openvibe-shared/indexnow, INDEXNOW_KEY) serves its key file at /<key>.txt and pings the creator page, terms page and sitemap when a plan is published, edited or archived"
   ],
   "not_yet": [
-    "not launched: openvibe.vip is still an OpenVibe.Sites placeholder and the service answers on loopback only",
-    "checkout is closed until the Billing cutover (Billing runs in shadow; the owner must re-point the PowerChat webhook first); no billing.* event has reached VIP",
+    "no membership sold yet: the first real purchase through Billing (PowerChat or Vibes credit) is the end-to-end proof still due",
     "Billing sells one channel subscription per member and creator: one purchasable plan per creator, no tiers, no network membership product",
     "revocations reach Chat and Community through vip.membership.changed subscriptions (2026-09-24); Blog and Live still converge by the cache TTL (30-60 s)"
   ],
