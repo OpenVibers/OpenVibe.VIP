@@ -174,6 +174,11 @@ The three Events subscriptions exist.
   membership starts at once); any other provider → Billing `POST /intents` (kind subscription),
   returning Billing's `checkout_url` or PowerChat `checkout_ref`. The membership starts when Billing's
   settlement event arrives. Idempotency keys come from VIP's ids (`vip:checkout:<id>`).
+- PowerChat: Billing answers with a `checkout_ref` (`pcsub:<intent>`, routed through the site) and no URL, and VIP
+  builds the link from `VIP_POWERCHAT_LINK_TEMPLATE` (`{ref}`, `{cents}`). Production sets it since 2026-10-17 to
+  PowerChat's canonical tip link on the site's PowerChat account, as OpenVibe.Live builds it
+  (`https://<powerchat>/<site account>/tip?app_client_id=…&app_ref={ref}&app_purpose=subscription&app_amount_cents={cents}`);
+  without it the page shows the reference to pay with.
 - Cancel is the member's own action: VIP confirms with Billing that the subscription is theirs, then
   Billing `POST /subscriptions/:id/cancel` (at period end).
 
