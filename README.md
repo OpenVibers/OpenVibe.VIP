@@ -2,11 +2,9 @@
 
 > Memberships: plans, perks and benefits recognised across every OpenVibe site.
 
-**Status:** alpha — runtime built and tested (roadmap Wave 10). Deployed internally, **not launched**:
-it runs on the host since 2026-09-23 on `127.0.0.1:4620` only, holding the Live import (on 2026-09-24:
-44 creators, 43 plans, 0 memberships), with checkout closed. `openvibe.vip` keeps its
-[OpenVibe.Sites](https://github.com/OpenVibers/OpenVibe.Sites) placeholder until the launch rule
-below holds.  
+**Status:** alpha — **launched 2026-10-17** at [openvibe.vip](https://openvibe.vip) (openvibe-contracts 0.200.0),
+right after the Billing cutover made OpenVibe.Billing the money ledger. Checkout is open (PowerChat and Vibes credit);
+the 43 plans imported from Live are on sale, with no memberships sold yet. It runs on the host since 2026-09-23.  
 **Domain:** `openvibe.vip` (port 4620, service id `vip`)  
 **Decision:** [ADR-012](https://github.com/OpenVibers/OpenVibe.Contracts/blob/main/docs/adr/ADR-012-economic-classification.md) —
 Billing holds the entitlement truth; VIP holds plans and perks.  
@@ -93,10 +91,10 @@ fnm exec --using=22.22.1 npm test    # every test/*.test.js: stub Network + Bill
 node scripts/subscribe.js            # create the three Events subscriptions for Billing's events
 ```
 
-Production (deployed, loopback only): `/opt/openvibe.vip`, env `/etc/openvibe/vip.env`, unit
-[deploy/systemd/openvibe-vip.service](deploy/systemd/openvibe-vip.service).
-The vhost [deploy/nginx/openvibe.vip.conf](deploy/nginx/openvibe.vip.conf) is not installed yet:
-`openvibe.vip` still serves the Sites placeholder. The three Events subscriptions exist.
+Production: `/opt/openvibe.vip`, env `/etc/openvibe/vip.env`, unit
+[deploy/systemd/openvibe-vip.service](deploy/systemd/openvibe-vip.service), vhost
+[deploy/nginx/openvibe.vip.conf](deploy/nginx/openvibe.vip.conf) (installed 2026-10-17: `openvibe.vip` serves VIP).
+The three Events subscriptions exist.
 
 ## Design
 
@@ -363,8 +361,8 @@ and deletion in `account_data_events`.
 
 ## Before and after the Billing cutover
 
-Billing runs in shadow mode until the Wave 8 cutover (Live stays authoritative for money,
-`BILLING_AUTHORITY=live`). Until then:
+The cutover happened on 2026-10-17 (`BILLING_AUTHORITY=billing` in Live and Billing): checkout is open
+(`VIP_CHECKOUT_PROVIDERS=powerchat,credit`). What held before it, kept for a rollback:
 
 - keep **checkout closed** (`VIP_CHECKOUT_PROVIDERS=` empty): a subscription sold through Billing
   now would be one Live does not know about. Plan pages say joining is not open yet; the API answers
@@ -429,8 +427,8 @@ Production deploys with `sudo ovhost deploy vip` on the host (strategy `git-chec
 fast-forward `/opt/openvibe.vip`, install on a lockfile change, restart, wait for `/api/ready`).
 The unit is `openvibe-vip.service` on `127.0.0.1:4620`, the env file `/etc/openvibe/vip.env`. The database is
 `ov_vip` on the host's data role (`sudo /opt/openvibe.host/roles/data/add-service.sh vip` writes its settings); the
-release migrates it at boot. The vhost [deploy/nginx/openvibe.vip.conf](deploy/nginx/openvibe.vip.conf) waits
-for the launch: `openvibe.vip` serves the Sites placeholder.
+release migrates it at boot. The vhost [deploy/nginx/openvibe.vip.conf](deploy/nginx/openvibe.vip.conf) serves
+`openvibe.vip` since the launch (2026-10-17).
 Rollback: ovhost puts the previous sha back by itself when `/api/ready` does not answer 2xx after the
 restart; afterwards `sudo ovhost rollback vip --to <sha>`. One blocker: `idx_vip_rules_resource` (one
 active rule per resource) was replaced by a per-creator unique index, and a release from before it
@@ -438,21 +436,18 @@ recreates the narrower index, which fails at boot once two creators gate the sam
 
 ## Launch rule
 
-This repository does not make the product real, and the domain keeps its placeholder page on
-[OpenVibers/OpenVibe.Sites](https://github.com/OpenVibers/OpenVibe.Sites) until all of the
-following exist (plan §12.12):
+Held on 2026-10-17, when `openvibe.vip` launched (openvibe-contracts 0.200.0 made VIP `live`; Network stopped parking
+the domain). The rule, as written before the launch (plan §12.12):
 
 1. an owning runtime with health/readiness endpoints and observability — ✔ (`/api/health`, truthful `/api/ready`, `/metrics`);
 2. canonical identity/auth integration (Network subjects, scoped service principals) — ✔; the `vip` principal is provisioned on the host;
 3. server-rendered public routes useful without JavaScript — ✔;
-4. real persistence and end-to-end workflows — ✔ against stubs; not yet against the running Billing and Events (deployed, but Billing is in shadow and checkout is closed);
+4. real persistence and end-to-end workflows — ✔, against the running Billing and Events since the cutover (2026-10-17);
 5. capability and event registration against `OpenVibe.Contracts` — ✔ v0.19.0;
 6. a migration/seed strategy ✔, a security/threat review (notes above; a review by someone else is still due), sitemap/robots ✔ (no feed by design);
 7. acceptance tests proving the advertised functionality — ✔ for VIP itself; cross-product convergence waits for the consumers.
 
-The launch release removes the domain from `OpenVibe.Sites/sites.json`, switches routing and
-registers maturity in the ecosystem registry atomically. A placeholder is never counted as an
-implemented service.
+A placeholder is never counted as an implemented service.
 
 ---
 
