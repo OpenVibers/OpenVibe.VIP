@@ -76,6 +76,30 @@ function home({ creators }) {
             { title: 'Join through OpenVibe.Billing', text: 'Pay from your Vibes credit or another way Billing offers; renew automatically or not, your choice.' },
             { title: 'Keep the terms you joined under', text: 'Plans are versioned: the version you joined stays yours while your membership lasts, and every version stays public in the terms history.' },
         ],
+    }) + showcase.code({
+        id: 'software',
+        title: 'Sell a subscription to your software',
+        lede: 'Publish a plan for your app or tool, then have it ask VIP whether the person signed in with OpenVibe is a member. '
+            + 'Whoever joins your plan gets in; when their membership ends, the answer says so.',
+        samples: [
+            {
+                label: 'Node (openvibe-sdk)', lang: 'js',
+                code: `const { createVipClient } = require('openvibe-sdk/vip');
+
+// personToken: the person's token from Sign in with OpenVibe
+const vip = createVipClient({ baseUrl: 'https://openvibe.vip', getToken: async () => personToken });
+const e = await vip.checkEntitlement({ creator: 'yourname' });
+if (e.active) unlockPro();   // expired, unknown or unreachable all answer no`,
+            },
+            {
+                label: 'Any language (HTTPS)', lang: 'bash',
+                code: `curl -s -X POST https://openvibe.vip/api/v1/entitlements/check \\
+  -H "Authorization: Bearer $PERSON_TOKEN" \\
+  -H 'Content-Type: application/json' \\
+  -d '{"creator":"yourname"}'
+# {"active":true,"status":"active","expires_at":"…",…}`,
+            },
+        ],
     }) + `
 <section class="sc-sec" id="creators" aria-labelledby="creators-h"><h2 id="creators-h">Creators with plans</h2>${list}<p class="muted creators-cta">Are you a creator? <a href="/dashboard">Offer a plan</a>.</p></section>`;
 }
