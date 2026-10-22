@@ -36,7 +36,7 @@ const LLMS_DETAILS = 'A creator page lists the plans and perks a creator offers 
 // most once an hour (the browser keeps it the same 3600 s).
 const LLMS_FULL_TTL_MS = 3600 * 1000;
 
-function createWebRoutes({ domain, config, layout, userAuth }) {
+function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
     const router = express.Router();
     const { creators, plans, perks, memberships, entitlements, policies, checkout, billing, prices } = domain;
     const forms = createForms({ secret: config.formSecret, now: domain.now });
@@ -179,10 +179,15 @@ function createWebRoutes({ domain, config, layout, userAuth }) {
 
     // What shipped on OpenVibe.VIP: the shared update log every OpenVibe site has.
     router.get('/updates', (req, res) => send(res, 200, { viewer: req.viewer, canonicalPath: '/updates', title: 'What shipped on OpenVibe.VIP', body: frame.updatesBody({ service: 'vip', siteName: 'OpenVibe.VIP' }) + `<script src="${ovServe.url('shipped.js')}" defer></script>` }));
-    router.get('/', async (req, res) => send(res, 200, {
-        active: 'home', viewer: req.viewer, canonicalPath: '/', styles: [require('openvibe-shared/showcase').STYLESHEET],
-        body: pages.home({ creators: (await creators.listPublic()).map(creators.present) }),
-    }));
+    router.get('/', async (req, res) => {
+        const list = (await creators.listPublic()).map(creators.present);
+        const live = liveNow ? await liveNow.list() : [];
+        send(res, 200, {
+            title: pages.HOME_TITLE, description: pages.HOME_DESCRIPTION, jsonLd: [pages.homeFaqJsonLd()],
+            active: 'home', viewer: req.viewer, canonicalPath: '/', styles: [require('openvibe-shared/showcase').STYLESHEET],
+            body: pages.home({ creators: list, live, networkUrl: config.network.url }),
+        });
+    });
 
     // ── The member's page ────────────────────────────────────
     router.get('/me', async (req, res, next) => {
