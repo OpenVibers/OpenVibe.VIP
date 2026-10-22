@@ -51,8 +51,11 @@ details > summary { cursor: pointer; font-weight: 600; margin: 6px 0; }
 .pill { display: inline-block; border: 1px solid var(--vip-border); border-radius: 999px; padding: 0 10px; font-size: .85rem; color: var(--vip-muted); }
 .pill-on { border-color: var(--vip-good); color: var(--vip-good); }
 .price b { font-size: 1.15rem; }
-.creator-list { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-.creator-list a { display: flex; flex-direction: column; background: var(--vip-card); border: 1px solid var(--vip-border); border-radius: 10px; padding: 12px 14px; color: inherit; text-decoration: none; }
+.creator-list { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: 12px; }
+.creator-list a { display: flex; align-items: center; gap: 12px; height: 100%; background: var(--vip-card); border: 1px solid var(--vip-border); border-radius: 10px; padding: 10px 14px; color: inherit; text-decoration: none; transition: border-color .15s; }
+.creator-list a:hover, .creator-list a:focus-visible { border-color: var(--vip-accent); }
+.vip-creator-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.vip-creator-text b, .vip-creator-text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .perks, .benefits, .versions, .rules, .perk-admin { padding-left: 1.2em; }
 .perk-admin { list-style: none; padding: 0; }
 table.members { width: 100%; border-collapse: collapse; display: block; overflow-x: auto; }
@@ -66,3 +69,22 @@ code { background: rgba(255, 255, 255, .06); padding: 1px 5px; border-radius: 4p
 @media (min-width: 640px) { .page .sc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .page #creators .creator-list { margin-top: 12px; }
 .page .creators-cta { margin-top: 14px; }
+
+/* The home: the numbers beside the hero, creators live now, avatars, questions. */
+.vip-avatar { flex: none; border-radius: 50%; background: var(--vip-border); object-fit: cover; }
+.vip-stats { margin: 0; display: grid; gap: 10px; }
+.vip-stats div { background: var(--vip-card); border: 1px solid var(--vip-border); border-radius: 12px; padding: 12px 16px; }
+.vip-stats dt { font-size: 1.25rem; font-weight: 700; }
+.vip-stats dd { margin: 2px 0 0; color: var(--vip-muted); font-size: .92rem; }
+.vip-live-pill { flex: none; display: inline-block; border-radius: 999px; padding: 0 8px; font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; background: var(--vip-bad); color: #1a0505; }
+.vip-live { list-style: none; padding: 0; margin: 12px 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 12px; }
+.vip-live li { display: flex; gap: 12px; align-items: flex-start; background: var(--vip-card); border: 1px solid var(--vip-border); border-radius: 12px; padding: 12px 14px; }
+.vip-live-main { min-width: 0; flex: 1; }
+.vip-live-main p { margin: 0 0 4px; }
+.vip-live-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vip-live-links { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px !important; font-weight: 600; }
+.vip-faq { margin-top: 12px; display: grid; gap: 8px; }
+.vip-faq details { background: var(--vip-card); border: 1px solid var(--vip-border); border-radius: 10px; padding: 4px 16px; }
+.vip-faq details[open] { padding-bottom: 12px; }
+.vip-faq summary { padding: 8px 0; margin: 0; }
+.vip-faq p { margin: 4px 0 0; color: var(--vip-muted); }

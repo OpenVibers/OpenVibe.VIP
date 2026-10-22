@@ -45,23 +45,68 @@ function errorPage({ status, title, message }) {
     return `<section class="card narrow"><p class="eyebrow">${esc(status)}</p><h1>${esc(title)}</h1><p>${esc(message)}</p><p><a href="/">OpenVibe.VIP home</a></p></section>`;
 }
 
+/** The home's title and description (layout adds " · OpenVibe.VIP"). */
+const HOME_TITLE = 'Creator memberships across OpenVibe';
+const HOME_DESCRIPTION = "Back the creators you watch with a monthly membership, recognised on every OpenVibe site. Or sell one for your channel or your software.";
+
+/** The questions the home answers, shown on the page and given to search engines as FAQPage data (the same text). */
+const HOME_FAQ = [
+    { q: 'What is a membership?', a: "A monthly plan from one creator. The plan lists what it includes, such as a members badge by your name in chat, members-only posts and a members' room, and each OpenVibe site that honours a perk recognises it." },
+    { q: 'How do I pay, and can I stop?', a: 'OpenVibe.Billing charges and renews every membership. Pay from your Vibes credit or another way Billing offers, and turn renewal off whenever you like: you keep the membership until the end of the period you paid for.' },
+    { q: 'What if the creator changes the plan?', a: 'Plans are versioned. The version you joined stays yours while your membership lasts, and every version stays public in the plan\'s terms history.' },
+    { q: 'Is a channel subscription on OpenVibe.Live the same thing?', a: "Yes. A creator's channel subscription on OpenVibe.Live is their plan here: the same Billing subscription, with its terms and perks written down." },
+    { q: 'How do I offer a plan?', a: 'Sign in and open your dashboard. Choose a tier from 1 to 10 and its monthly price, pick the perks, and publish. Billing takes the payments and your earnings follow Billing\'s payouts.' },
+    { q: 'Can I sell a subscription to my own app?', a: 'Yes. Publish a plan, then have your app ask VIP whether the person signed in with OpenVibe is a member, with the SDK or one HTTPS call. The answer is no as soon as a membership ends.' },
+];
+
+/** FAQPage structured data for the home, from the same questions the page shows. */
+function homeFaqJsonLd() {
+    return {
+        '@context': 'https://schema.org', '@type': 'FAQPage',
+        mainEntity: HOME_FAQ.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a } })),
+    };
+}
+
+const avatar = (networkUrl, username, size) => `<img class="vip-avatar" src="${esc(networkUrl)}/avatar/${encodeURIComponent(username)}?s=${size}" width="${size}" height="${size}" alt="" loading="lazy" decoding="async">`;
+const plural = (n, one, many) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
+
 /**
- * The home: the product's own words (openvibe-shared/showcase), then the creators with published plans. No prices here:
- * OpenVibe.Billing prices each plan, and a creator's page shows it before anyone joins.
+ * The home: who it is for in one line, the real numbers beside it, creators with a plan who are live on OpenVibe.Live
+ * right now, every creator with a plan (live ones first), what a plan can include, how a membership works, how a creator
+ * offers one, selling a subscription to software, and the questions people ask. No prices here: OpenVibe.Billing prices
+ * each plan, and a creator's page shows it before anyone joins. live: server/live-now.js (Live's public stream list).
  */
-function home({ creators }) {
-    const list = creators.length
-        ? `<ul class="creator-list">${creators.map((c) => `<li><a href="/${encodeURIComponent(c.username)}"><b>${esc(c.display_name || c.username)}</b><span class="muted">@${esc(c.username)}</span></a></li>`).join('')}</ul>`
+function home({ creators, live = [], networkUrl = 'https://openvibe.network' }) {
+    const onAir = new Map(live.map((s) => [String(s.username).toLowerCase(), s]));
+    const liveCreators = creators.filter((c) => c.username && onAir.has(c.username.toLowerCase())).map((c) => ({ c, s: onAir.get(c.username.toLowerCase()) }));
+    const ordered = [...liveCreators.map((x) => x.c), ...creators.filter((c) => !c.username || !onAir.has(c.username.toLowerCase()))];
+
+    const stats = [];
+    if (creators.length) stats.push(`<div><dt>${plural(creators.length, 'creator', 'creators')}</dt><dd>offer a membership</dd></div>`);
+    if (liveCreators.length) stats.push(`<div><dt>${plural(liveCreators.length, 'creator', 'creators')}</dt><dd>live on OpenVibe.Live now</dd></div>`);
+    stats.push('<div><dt>10 tiers</dt><dd>each creator prices their own</dd></div>');
+    stats.push('<div><dt>1 membership</dt><dd>recognised on every OpenVibe site that honours it</dd></div>');
+
+    const liveSection = liveCreators.length ? `
+<section class="sc-sec" id="live" aria-labelledby="live-h"><h2 id="live-h">Live now</h2><p class="sc-lede">Creators with a membership who are streaming on OpenVibe.Live right now.</p>
+<ul class="vip-live">${liveCreators.map(({ c, s }) => `<li>${avatar(networkUrl, c.username, 48)}<div class="vip-live-main"><p class="vip-live-name"><b>${esc(c.display_name || c.username)}</b> <span class="vip-live-pill">Live</span></p>${s.title ? `<p class="vip-live-title">${esc(s.title)}</p>` : ''}<p class="muted small">${s.category ? `${esc(s.category)} · ` : ''}${plural(s.viewers, 'viewer', 'viewers')}</p><p class="vip-live-links"><a href="${esc(s.url)}" rel="noopener">Watch</a><a href="/${encodeURIComponent(c.username)}">See the plan</a></p></div></li>`).join('')}</ul></section>` : '';
+
+    const list = ordered.length
+        ? `<ul class="creator-list">${ordered.map((c) => `<li><a href="/${encodeURIComponent(c.username)}">${avatar(networkUrl, c.username, 40)}<span class="vip-creator-text"><b>${esc(c.display_name || c.username)}</b><span class="muted">@${esc(c.username)}</span></span>${onAir.has(c.username.toLowerCase()) ? '<span class="vip-live-pill">Live</span>' : ''}</a></li>`).join('')}</ul>`
         : '<p class="muted">No creator has published a plan here yet.</p>';
+
     return showcase.hero({
         eyebrow: 'OpenVibe.VIP',
         title: 'Memberships across', accent: 'OpenVibe',
-        lede: "Join a creator's plan once and your membership is recognised on every OpenVibe site that honours it: a badge in chat, members-only posts, rooms and more, as each plan lists.",
+        lede: "Back the creators you watch with a monthly membership. Join once and it's recognised across OpenVibe: a badge by your name in chat, members-only posts, a members' room, whatever the plan lists.",
         actions: creators.length
-            ? [{ label: 'Find a creator', href: '#creators', primary: true }, { label: 'Your memberships', href: '/me' }]
+            ? [{ label: 'Find a creator', href: '#creators', primary: true }, { label: 'Offer a plan', href: '#for-creators' }, { label: 'Your memberships', href: '/me' }]
             : [{ label: 'Offer a plan', href: '/dashboard', primary: true }, { label: 'Your memberships', href: '/me' }],
         note: 'Payments, renewals, cancellations and refunds are handled by OpenVibe.Billing.',
-    }) + showcase.features({
+        html: `<dl class="vip-stats">${stats.join('')}</dl>`,
+    }) + liveSection + `
+<section class="sc-sec" id="creators" aria-labelledby="creators-h"><h2 id="creators-h">Creators with a membership</h2><p class="sc-lede">Each page lists the creator's plan, what it includes and its price before you join.</p>${list}<p class="muted creators-cta">Are you a creator? <a href="/dashboard">Offer a plan</a>.</p></section>`
+    + showcase.features({
         title: 'What a plan can include',
         lede: 'A creator builds each plan from perks; the plan lists exactly which, and each OpenVibe site that honours a perk recognises it.',
         items: [
@@ -73,9 +118,19 @@ function home({ creators }) {
     }) + showcase.steps({
         title: 'How a membership works',
         items: [
-            { title: "Pick a creator's plan", text: 'Each creator page lists their plans, what each includes and its price.' },
+            { title: "Pick a creator's plan", text: 'Each creator page lists their plan, what it includes and its price.' },
             { title: 'Join through OpenVibe.Billing', text: 'Pay from your Vibes credit or another way Billing offers; renew automatically or not, your choice.' },
             { title: 'Keep the terms you joined under', text: 'Plans are versioned: the version you joined stays yours while your membership lasts, and every version stays public in the terms history.' },
+        ],
+    }) + showcase.steps({
+        id: 'for-creators',
+        title: 'Offer a membership',
+        lede: 'Streaming on OpenVibe.Live already? Your channel subscription is your plan here, ready to describe and price.',
+        items: [
+            { title: 'Open your dashboard', href: '/dashboard', text: 'Sign in with your OpenVibe account; your plan and its members are all on one page.' },
+            { title: 'Choose a tier and a price', text: 'Tiers run from 1 to 10. Set each tier\'s monthly price within Billing\'s limits; tier 1 sells at Billing\'s standard price until you set your own.' },
+            { title: 'Say what members get', text: 'Write what the plan includes and pick its perks. Each change becomes a new version, and members keep the one they joined.' },
+            { title: 'Get paid through Billing', text: 'Billing takes the payments and handles renewals and refunds; your earnings follow its payouts.' },
         ],
     }) + showcase.code({
         id: 'software',
@@ -102,7 +157,7 @@ if (e.active) unlockPro();   // expired, unknown or unreachable all answer no`,
             },
         ],
     }) + `
-<section class="sc-sec" id="creators" aria-labelledby="creators-h"><h2 id="creators-h">Creators with plans</h2>${list}<p class="muted creators-cta">Are you a creator? <a href="/dashboard">Offer a plan</a>.</p></section>`;
+<section class="sc-sec" id="questions" aria-labelledby="questions-h"><h2 id="questions-h">Questions</h2><div class="vip-faq">${HOME_FAQ.map((f) => `<details><summary>${esc(f.q)}</summary><p>${esc(f.a)}</p></details>`).join('')}</div></section>`;
 }
 
 /** The creator's public plan page. */
@@ -295,4 +350,7 @@ ${rules.length ? `<ul class="rules">${rules.map((r) => `<li><code>${esc(r.resour
 <button type="submit">Save rule</button></form></details></section>`}`;
 }
 
-module.exports = { errorPage, home, creatorPage, planHistory, memberPage, checkoutPage, dashboard, fmtDate };
+module.exports = {
+    HOME_TITLE, HOME_DESCRIPTION, HOME_FAQ, homeFaqJsonLd,
+    errorPage, home, creatorPage, planHistory, memberPage, checkoutPage, dashboard, fmtDate,
+};

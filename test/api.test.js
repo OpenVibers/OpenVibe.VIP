@@ -206,7 +206,9 @@ const { test, run } = harness('api');
         assert.match(p.text, /id="ov-footer"/);
         assert.match(p.text, /OpenVibeFooter\.init\(window\.__OV_PAGE\.footer\)/);
         const home = await t.page('/');
-        assert.match(home.text, /<title>OpenVibe\.VIP — memberships across OpenVibe<\/title>/);
+        assert.match(home.text, /<title>Creator memberships across OpenVibe · OpenVibe\.VIP<\/title>/);
+        assert.match(home.text, /"@type":"FAQPage"/, 'the questions shown are FAQPage data too');
+        assert.ok(home.text.includes('id="questions"') && home.text.includes('id="for-creators"'), 'questions and the creators\' path');
         // The home opens with the showcase kit (openvibe-shared/showcase): one h1 (the hero), the kit's sheet on the
         // home only, no invented prices, and the creators still listed below it.
         assert.ok(home.text.includes('class="sc-hero') && home.text.includes('class="sc-sec"'), 'hero and sections');

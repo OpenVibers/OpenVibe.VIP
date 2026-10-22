@@ -89,6 +89,8 @@ function loadConfig(env = process.env) {
             refreshIntervalMs: int(env.VIP_REFRESH_INTERVAL_MS, 60 * 1000),
         },
         liveUrl: trim(env.LIVE_URL || 'https://openvibe.live'),
+        // The home's "Live now" strip reads Live's public stream list (server/live-now.js); off in tests unless asked.
+        liveNow: env.VIP_LIVE_NOW ? env.VIP_LIVE_NOW === 'on' : nodeEnv !== 'test',
 
         // The public card, badge and widget (/embed, server/web/embeds.js). frameAncestors is the
         // widget's CSP frame-ancestors (any site by default: it is meant to be embedded; the rest of

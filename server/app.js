@@ -13,7 +13,7 @@
  *   /embed/:username/card.json|badge.svg|widget   public card, badge and widget (no cookies, see web/embeds.js)
  *   /, /me, /dashboard, /:username …  server-rendered pages
  *
- * createApp({ config, db, keys, billing, outbox, now, fetchImpl, eventsFetch, log }) — all injectable.
+ * createApp({ config, db, keys, billing, outbox, now, fetchImpl, eventsFetch, liveNow, log }) — all injectable.
  */
 const path = require('path');
 const express = require('express');
@@ -135,7 +135,8 @@ async function createApp(opts = {}) {
             res.setHeader('Cache-Control', cache.assetHeaders(rel, { hashed: v && v === assetVersion(rel) }));
         },
     }));
-    app.use(createWebRoutes({ domain, config, layout, userAuth }));
+    const liveNow = opts.liveNow || require('./live-now').createLiveNow({ config, fetchImpl, log });
+    app.use(createWebRoutes({ domain, config, layout, userAuth, liveNow }));
 
     app.use((req, res) => {
         if (req.path.startsWith('/api/') || req.path.startsWith('/internal/')) return http.sendProblem(res, 404, 'not_found', { ctx: req.ov });
