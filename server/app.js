@@ -89,8 +89,8 @@ async function createApp(opts = {}) {
         res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
         // connect-src openvibe.events: release notifications (release-watch's EventSource, openvibe-shared 1.17).
         res.setHeader('Content-Security-Policy', [
-            "default-src 'self'", "script-src 'self' 'unsafe-inline' https://openvibe.network", "style-src 'self' 'unsafe-inline' https://openvibe.network",
-            "img-src 'self' data: https:", "connect-src 'self' https://openvibe.network https://openvibe.events", "frame-src 'self' https://openvibe.network",
+            "default-src 'self'", "script-src 'self' 'unsafe-inline' https://openvibe.network https://static.cloudflareinsights.com", "style-src 'self' 'unsafe-inline' https://openvibe.network",
+            "img-src 'self' data: https:", "connect-src 'self' https://openvibe.network https://openvibe.events https://cloudflareinsights.com", "frame-src 'self' https://openvibe.network",
             "frame-ancestors 'self'", "object-src 'none'", "base-uri 'self'", "form-action 'self' https://openvibe.network https:",
         ].join('; '));
         next();
