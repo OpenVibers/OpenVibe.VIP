@@ -105,7 +105,9 @@ code { background: rgba(255, 255, 255, .06); padding: 1px 5px; border-radius: 4p
   .creator-list .vip-avatar { width: 28px; height: 28px; }
   .creator-list .vip-creator-text .muted { display: none; }
   .creator-list .vip-creator-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .vip-stats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-template-columns: none; gap: 8px; }
+  .vip-stats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(124px, 1fr); grid-template-columns: none; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-left: -16px; margin-right: -16px; padding: 0 16px 2px; }
+  .vip-stats::-webkit-scrollbar { display: none; }
+  .vip-stats dt, .vip-stats dd { overflow-wrap: normal; word-break: normal; }
   .vip-stats > div { padding: 10px 12px; }
   .vip-stats dt { font-size: 1.05rem; }
   .vip-stats dd { font-size: .76rem; line-height: 1.35; }
