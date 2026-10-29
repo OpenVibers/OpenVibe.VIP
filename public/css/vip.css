@@ -88,3 +88,26 @@ code { background: rgba(255, 255, 255, .06); padding: 1px 5px; border-radius: 4p
 .vip-faq details[open] { padding-bottom: 12px; }
 .vip-faq summary { padding: 8px 0; margin: 0; }
 .vip-faq p { margin: 4px 0 0; color: var(--vip-muted); }
+
+/* The home on phones (2026-10-29): a taste and a door. The creators are a two-column list of names (each opens its
+   page), the figures are one row, and the explainers fold under their headings. */
+.vip-fold { border: 1px solid var(--border, #1f2d47); border-radius: 16px; background: var(--bg-secondary, #101828); }
+.vip-fold > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 0 18px; cursor: pointer; list-style: none; }
+.vip-fold > summary::-webkit-details-marker { display: none; }
+.vip-fold > summary h2 { margin: 0; }
+.vip-fold > summary span { color: var(--text-muted, #7386a3); font-weight: 600; font-size: .86rem; text-align: right; }
+.vip-fold > summary:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: -2px; border-radius: 16px; }
+.vip-fold .sc-sec { max-width: none; margin: 0; padding: 0 18px 18px; }
+@media (max-width: 599px) {
+  .creator-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .creator-list > li { margin: 0; min-width: 0; }
+  .creator-list a { min-height: 48px; padding: 8px 10px; gap: 8px; }
+  .creator-list .vip-avatar { width: 28px; height: 28px; }
+  .creator-list .vip-creator-text .muted { display: none; }
+  .creator-list .vip-creator-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vip-stats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-template-columns: none; gap: 8px; }
+  .vip-stats > div { padding: 10px 12px; }
+  .vip-stats dt { font-size: 1.05rem; }
+  .vip-stats dd { font-size: .76rem; line-height: 1.35; }
+  .vip-fold > summary span { display: none; }
+}
