@@ -67,6 +67,7 @@ function homeFaqJsonLd() {
     };
 }
 
+const S = require('./short');
 const avatar = (networkUrl, username, size) => `<img class="vip-avatar" src="${esc(networkUrl)}/avatar/${encodeURIComponent(username)}?s=${size}" width="${size}" height="${size}" alt="" loading="lazy" decoding="async">`;
 const plural = (n, one, many) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
 
@@ -95,7 +96,7 @@ function home({ creators, live = [], networkUrl = 'https://openvibe.network' }) 
         ? `<ul class="creator-list">${ordered.map((c) => `<li><a href="/${encodeURIComponent(c.username)}">${avatar(networkUrl, c.username, 40)}<span class="vip-creator-text"><b>${esc(c.display_name || c.username)}</b><span class="muted">@${esc(c.username)}</span></span>${onAir.has(c.username.toLowerCase()) ? '<span class="vip-live-pill">Live</span>' : ''}</a></li>`).join('')}</ul>`
         : '<p class="muted">No creator has published a plan here yet.</p>';
 
-    return showcase.hero({
+    const body = showcase.hero({
         eyebrow: 'OpenVibe.VIP',
         title: 'Memberships across', accent: 'OpenVibe',
         lede: "Back the creators you watch with a monthly membership. Join once and it's recognised across OpenVibe: a badge by your name in chat, members-only posts, a members' room, whatever the plan lists.",
@@ -159,6 +160,9 @@ if (e.active) unlockPro();   // expired, unknown or unreachable all answer no`,
         ],
     }) + `</details></section>
 <section class="sc-sec" id="questions" aria-labelledby="questions-h"><h2 id="questions-h">Questions</h2><div class="vip-faq">${HOME_FAQ.map((f) => `<details><summary>${esc(f.q)}</summary><p>${esc(f.a)}</p></details>`).join('')}</div></section>`;
+    // The questions are a fold on a phone (the owner's short-pages rule, 2026-10-30): they stay in the page for the
+    // crawlers, and the script closes them where the reader has room for more.
+    return S.foldSection(body, 'id="questions"', 'questions-fold');
 }
 
 /** The creator's public plan page. */
