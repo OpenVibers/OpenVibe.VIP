@@ -89,6 +89,13 @@ code { background: rgba(255, 255, 255, .06); padding: 1px 5px; border-radius: 4p
 .vip-faq summary { padding: 8px 0; margin: 0; }
 .vip-faq p { margin: 4px 0 0; color: var(--vip-muted); }
 
+/* 7 touch targets (2026-10-29): questions are 44 px tall and live links gain vertical-only hit areas. */
+@media (pointer: coarse) {
+  .vip-faq summary { min-height: 44px; }
+  .vip-live-links a { position: relative; }
+  .vip-live-links a::after { content: ''; position: absolute; left: 0; right: 0; top: -10px; bottom: -10px; }
+}
+
 /* The home on phones (2026-10-29): a taste and a door. The creators are a two-column list of names (each opens its
    page), the figures are one row, and the explainers fold under their headings. */
 .vip-fold { border: 1px solid var(--border, #1f2d47); border-radius: 16px; background: var(--bg-secondary, #101828); }
@@ -112,4 +119,11 @@ code { background: rgba(255, 255, 255, .06); padding: 1px 5px; border-radius: 4p
   .vip-stats dt { font-size: 1.05rem; }
   .vip-stats dd { font-size: .76rem; line-height: 1.35; }
   .vip-fold > summary span { display: none; }
+}
+
+/* Touch targets on phones (fleet audit, 2026-10-29): touch pointers only. */
+@media (pointer: coarse) {
+  .vip-faq summary { min-height: 44px; }
+  .vip-live-links a { position: relative; }
+  .vip-live-links a::after { content: ''; position: absolute; left: 0; right: 0; top: -10px; bottom: -10px; }
 }
