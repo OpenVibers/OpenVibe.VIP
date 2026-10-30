@@ -8,7 +8,8 @@
 const assert = require('assert');
 const http = require('http');
 const { boot, harness } = require('./helpers/app');
-const { createNetworkSender } = require('openvibe-sdk/account-data');
+const { createNetworkSender, uncovered } = require('openvibe-sdk/account-data');
+const { TABLES } = require('../server/domain/account-data');
 
 const { test, run } = harness('account-data');
 
@@ -40,6 +41,13 @@ const envelope = (id, type, payload) => ({ event_id: id, event_type: type, sourc
     const other = t.network.newUser('otto');
     let plan;
     let creatorId;
+    test('every table that names a person is covered or exempted with a reason', async () => {
+        const missing = await uncovered(db, {
+            tables: TABLES,
+            exempt: { account_data_events: 'the ledger of requests itself: which export and deletion VIP applied' },
+        });
+        assert.deepStrictEqual(missing, [], `a table with a person column is neither covered nor exempted: ${missing.join(', ')}`);
+    });
 
     test('a creator publishes a plan and two members pay for it', async () => {
         plan = (await t.call('POST', '/api/v1/plans', { user: creator, body: { name: 'Crew', publish: true } })).json.plan;
