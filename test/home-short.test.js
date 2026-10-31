@@ -16,7 +16,7 @@ const html = pages.home({ creators, live: [], networkUrl: 'https://openvibe.netw
 
 // The questions are a fold, open in the page and closed on a phone.
 assert.ok(html.includes('<details class="hm-fold hm-fold-block" id="questions-fold" open>'), 'the questions are a fold, open in the page');
-assert.ok(html.includes('document.getElementById("questions-fold")'), 'the fold has the script that closes it on a phone');
+assert.ok(!html.includes('document.getElementById("questions-fold")'), 'the fold is never closed by script');
 // The questions stay in the page.
 assert.match(html, /What is a membership\?/);
 assert.ok(html.includes('id="questions"'), 'the questions keep their section');
