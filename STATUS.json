@@ -6,7 +6,7 @@
   "deployment": "Launched 2026-10-17 at https://openvibe.vip (openvibe-contracts 0.200.0 made VIP live; vhost deploy/nginx/openvibe.vip.conf installed): deployed with `sudo ovhost deploy vip`, /opt/openvibe.vip, unit openvibe-vip, 127.0.0.1:4620 behind nginx. Principal vip; three Events subscriptions for Billing's events. Checkout open since the Billing cutover (VIP_CHECKOUT_PROVIDERS=powerchat,credit): 43 plans imported from Live, 0 memberships sold on launch day.",
   "contracts": "openvibe-contracts v0.222.0",
   "sdk": "openvibe-sdk v0.74.0",
-  "shared": "openvibe-shared v4.67.0",
+  "shared": "openvibe-shared v4.70.0",
   "plan": "OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026)",
   "roadmap": "Wave 10",
   "works": [
@@ -48,5 +48,5 @@
     "per-actor limits (openvibe-sdk/limits)"
   ],
   "runtime": "",
-  "updated": "2026-10-31"
+  "updated": "2026-11-01"
 }
