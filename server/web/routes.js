@@ -183,7 +183,7 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
         const list = (await creators.listPublic()).map(creators.present);
         const live = liveNow ? await liveNow.list() : [];
         send(res, 200, {
-            title: pages.HOME_TITLE, description: pages.HOME_DESCRIPTION, jsonLd: [pages.homeFaqJsonLd()],
+            title: pages.HOME_TITLE, description: pages.HOME_DESCRIPTION, jsonLd: [seo.jsonLd.website({ name: 'OpenVibe.VIP', url: `${String(config.baseUrl).replace(/\/+$/, '')}/`, description: pages.HOME_DESCRIPTION }), seo.jsonLd.organization(), pages.homeFaqJsonLd()],
             active: 'home', viewer: req.viewer, canonicalPath: '/', styles: [require('openvibe-shared/showcase').STYLESHEET],
             body: pages.home({ creators: list, live, networkUrl: config.network.url }),
         });
