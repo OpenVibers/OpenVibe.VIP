@@ -60,7 +60,7 @@ details > summary { cursor: pointer; font-weight: 600; margin: 6px 0; }
 .perk-admin { list-style: none; padding: 0; }
 table.members { width: 100%; border-collapse: collapse; display: block; overflow-x: auto; }
 table.members th, table.members td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--vip-border); }
-code { background: rgba(255, 255, 255, .06); padding: 1px 5px; border-radius: 4px; }
+code { background: color-mix(in srgb, var(--text-primary, #fff) 6%, transparent); padding: 1px 5px; border-radius: 4px; }
 
 /* The home's kit sections (openvibe-shared/showcase) sit in this page's 880 px column, which already has its gutter. */
 .page .sc-hero, .page .sc-sec { padding-left: 0; padding-right: 0; }
