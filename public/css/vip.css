@@ -60,7 +60,7 @@ details > summary { cursor: pointer; font-weight: 600; margin: 6px 0; }
 .perk-admin { list-style: none; padding: 0; }
 table.members { width: 100%; border-collapse: collapse; display: block; overflow-x: auto; }
 table.members th, table.members td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--vip-border); }
-code { background: rgba(255, 255, 255, .06); padding: 1px 5px; border-radius: 4px; }
+code { background: color-mix(in srgb, var(--text-primary, #fff) 6%, transparent); padding: 1px 5px; border-radius: 4px; }
 
 /* The home's kit sections (openvibe-shared/showcase) sit in this page's 880 px column, which already has its gutter. */
 .page .sc-hero, .page .sc-sec { padding-left: 0; padding-right: 0; }
@@ -88,3 +88,95 @@ code { background: rgba(255, 255, 255, .06); padding: 1px 5px; border-radius: 4p
 .vip-faq details[open] { padding-bottom: 12px; }
 .vip-faq summary { padding: 8px 0; margin: 0; }
 .vip-faq p { margin: 4px 0 0; color: var(--vip-muted); }
+
+/* 7 touch targets (2026-10-29): questions are 44 px tall and live links gain vertical-only hit areas. */
+@media (pointer: coarse) {
+  .vip-faq summary { min-height: 44px; }
+  .vip-live-links a { position: relative; }
+  .vip-live-links a::after { content: ''; position: absolute; left: 0; right: 0; top: -10px; bottom: -10px; }
+}
+
+/* The home on phones (2026-10-29): a taste and a door. The creators are a two-column list of names (each opens its
+   page), the figures are one row, and the explainers fold under their headings. */
+.vip-fold { border: 1px solid var(--border, #1f2d47); border-radius: 16px; background: var(--bg-secondary, #101828); }
+.vip-fold > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 0 18px; cursor: pointer; list-style: none; }
+.vip-fold > summary::-webkit-details-marker { display: none; }
+.vip-fold > summary h2 { margin: 0; }
+.vip-fold > summary span { color: var(--text-muted, #7386a3); font-weight: 600; font-size: .86rem; text-align: right; }
+.vip-fold > summary:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: -2px; border-radius: 16px; }
+.vip-fold .sc-sec { max-width: none; margin: 0; padding: 0 18px 18px; }
+@media (max-width: 599px) {
+  .creator-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .creator-list > li { margin: 0; min-width: 0; }
+  .creator-list a { min-height: 48px; padding: 8px 10px; gap: 8px; }
+  .creator-list .vip-avatar { width: 28px; height: 28px; }
+  .creator-list .vip-creator-text .muted { display: none; }
+  .creator-list .vip-creator-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vip-stats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(124px, 1fr); grid-template-columns: none; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-left: -16px; margin-right: -16px; padding: 0 16px 2px; }
+  .vip-stats::-webkit-scrollbar { display: none; }
+  .vip-stats dt, .vip-stats dd { overflow-wrap: normal; word-break: normal; }
+  .vip-stats > div { padding: 10px 12px; }
+  .vip-stats dt { font-size: 1.05rem; }
+  .vip-stats dd { font-size: .76rem; line-height: 1.35; }
+  .vip-fold > summary span { display: none; }
+}
+
+/* Touch targets on phones (fleet audit, 2026-10-29): touch pointers only. */
+@media (pointer: coarse) {
+  .vip-faq summary { min-height: 44px; }
+  .vip-live-links a { position: relative; }
+  .vip-live-links a::after { content: ''; position: absolute; left: 0; right: 0; top: -10px; bottom: -10px; }
+}
+
+/* The phone home (2026-10-30, the owner's short-pages rule): the questions are a fold, closed on a phone and open
+   where there is room, and the creators are one sideways row (every creator is still there). */
+/* Pick (the owner's short-pages rule, 2026-10-30): on a phone the front page's blocks of the same kind are one at a
+   time, picked with a row of chips. Radio inputs and :has(), no script: the chips and the one-pane rule live under
+   640 px and only where :has() is understood, so a wider screen, or an older browser, shows every pane and no chips.
+   Every pane stays in the page for crawlers. */
+.pick-head { display: none; }
+.pick-row { display: none; }
+@supports selector(:has(*)) { @media (max-width: 640px) {
+  .pick-bar { margin-top: 30px; }
+  .pick-head { display: block; }
+  .pick-head h2 { margin: 0 0 4px; font: 700 clamp(20px, 2.4vw, 28px)/1.2 var(--ov-font, 'Inter', system-ui, sans-serif); letter-spacing: -.02em; }
+  .pick-row { display: flex; gap: 8px; overflow-x: auto; margin: 10px -16px 0; padding: 2px 16px 4px; scrollbar-width: none; overscroll-behavior-x: contain; }
+  .pick-row::-webkit-scrollbar { display: none; }
+  .pick-row input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+  .pick-row label { display: inline-flex; align-items: center; flex: none; min-height: 44px; padding: 0 15px; border-radius: 999px; border: 1px solid var(--border, #1f2d47); color: var(--text-secondary, #96a7c2); font-size: .9rem; font-weight: 650; white-space: nowrap; cursor: pointer; }
+  .pick-row input:checked + label { color: var(--text-primary, #e6edf7); border-color: var(--accent, #3b82f6); background: color-mix(in srgb, var(--accent, #3b82f6) 12%, transparent); }
+  .pick-row input:focus-visible + label { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; }
+  .pick .pick-pane { display: none; }
+  /* A link that points at a pane opens that pane on a phone too. */
+  .pick .pick-pane:target { display: block !important; }
+  .pick:has(.pick-pane:target) .pick-pane:not(:target) { display: none !important; }
+  /* The chip names the pane, so the pane's own heading gives way to it; the link to more stays. */
+  .pick .pick-pane > h2, .pick .pick-pane > h3 { display: none; }
+} }
+
+/* The fold (the owner's short-pages rule): closed on a phone, and where there is room it looks like the section it
+   replaces: a heading and its content, with no card around it. */
+.hm-fold-block { margin-top: 32px; }
+.hm-fold-block > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; cursor: pointer; list-style: none; }
+.hm-fold-block > summary::-webkit-details-marker { display: none; }
+.hm-fold-block > summary h2 { margin: 0; font: 700 clamp(19px, 2.2vw, 26px)/1.2 var(--ov-font, 'Inter', system-ui, sans-serif); }
+.hm-fold-block > summary span { color: var(--text-muted, #7386a3); font-weight: 600; font-size: .86rem; white-space: nowrap; }
+.hm-fold-block > summary:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; }
+@media (min-width: 641px) {
+  .hm-fold-block { border: 0; background: none; border-radius: 0; margin: 56px auto 0; padding: 0; }
+  .hm-fold-block > summary { display: block; min-height: 0; }
+  .hm-fold-block > summary h2 { margin: 0 0 6px; font: 700 clamp(22px, 2.6vw, 30px)/1.2 var(--ov-font, 'Inter', system-ui, sans-serif); }
+  .hm-fold-block > summary span { display: none; }
+  .hm-fold-block .hm-sec, .hm-fold-block .sc-sec { margin: 0; max-width: none; padding: 0; }
+}
+@media (max-width: 640px) { .hm-fold-block { margin-top: 24px; } .hm-fold-block > summary h2 { font-size: 1.05rem; } }
+/* A fold that sits inside the section it replaces adds no space of its own. */
+:where(.sc-sec, .cm-sec, .hm-sec, .section) > .hm-fold-block { margin: 0; }
+/* The fold holds the questions, so their list gets the room the section gave it. */
+.hm-fold-block .vip-faq { margin: 0; padding: 0 16px 16px; }
+/* The creators on a phone: one sideways row of cards, every creator still in the page. */
+@media (max-width: 599px) {
+  .creator-list { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: 16px; gap: 10px; margin-left: -16px; margin-right: -16px; padding: 0 16px 4px; scrollbar-width: none; }
+  .creator-list::-webkit-scrollbar { display: none; }
+  .creator-list > li { flex: 0 0 45%; min-width: 0; scroll-snap-align: start; }
+}
