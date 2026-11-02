@@ -51,7 +51,14 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
         return ratesCache.value;
     }
 
-    const send = (res, status, o) => res.status(status).type('html').send(layout.page(o));
+    const send = (res, status, o) => {
+        // A public page names its Markdown twin in the Link header, exactly as the agent layer's own
+        // responses do; a page rendered for a signed-in person (noindex) has no twin and no header.
+        if (o && o.canonicalPath && !String(o.robots || 'index,follow').includes('noindex')) {
+            res.set('Link', require('openvibe-shared/agent-layer').linkHeaderTags(layout.abs(o.canonicalPath), `${String(config.baseUrl).replace(/\/+$/, '')}/llms.txt`).header);
+        }
+        return res.status(status).type('html').send(layout.page(o));
+    };
     const dollars = (cents) => `$${(cents / 100).toFixed(2)}`;
     /** A price typed in a form ("4.99", "$5"): cents, or null when left blank; anything else is refused. */
     function priceInput(v, { required = false } = {}) {

@@ -63,6 +63,12 @@ function createLayout({ config, release }) {
             notificationsRealtime: true,   // the bell hears new notifications over OpenVibe.Events (Shared 1.22.0)
         };
         const footer = { service: 'vip', variant: 'auto', path: o.canonicalPath, mount: '#ov-footer', brandName: SITE_NAME, updates: '/updates' };   // full on the front page only (Shared 4.19)
+        const robots = o.robots || 'index,follow';
+        // Every indexable page has a Markdown twin (server/agent-pages.js) and names it in the head. A page
+        // rendered for a signed-in person, or a planless creator page, is noindex and advertises none.
+        const agentHead = o.canonicalPath && !String(robots).includes('noindex')
+            ? require('openvibe-shared/agent-layer').linkHeaderTags(canonical, `${String(config.baseUrl).replace(/\/+$/, '')}/llms.txt`).head
+            : '';
         const who = o.viewer
             ? `<span class="who">Signed in as <b>${esc(o.viewer.name || o.viewer.username || 'you')}</b> · <a href="/auth/logout?next=/">Sign out</a></span>`
             : `<a class="who" href="/auth/login?next=${encodeURIComponent(o.canonicalPath || '/')}">Sign in</a>`;
@@ -73,12 +79,13 @@ function createLayout({ config, release }) {
             name: SITE_NAME, service: 'vip', lang: 'en',
             title: o.title || `${SITE_NAME} — memberships across OpenVibe`,
             titleSuffix: o.title ? ` · ${SITE_NAME}` : undefined,
-            siteName: SITE_NAME, description, canonical, robots: o.robots || 'index,follow',
+            siteName: SITE_NAME, description, canonical, robots,
             type: o.ogType || 'website', image: o.ogImage, jsonLd: o.jsonLd,
             summary: description, url: canonical,
             navbar: nav, footer, home: '/', navLinks: NAV_LINKS,
             head: [
                 '<meta name="referrer" content="strict-origin-when-cross-origin">',
+                agentHead,
                 appIcon.headTags({ site: 'vip' }),
                 release ? release.metaTag() : '',
                 `<link rel="stylesheet" href="${asset('css/vip.css')}">`,
