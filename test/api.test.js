@@ -236,7 +236,10 @@ const { test, run } = harness('api');
         assert.strictEqual(llms.status, 200);
         assert.match(llms.headers.get('content-type'), /^text\/plain/);
         assert.match(llms.text, /^# /, 'llms.txt starts with a markdown heading');
-        assert.match(llms.text, /\[Creators with published plans\]\(http:\/\/vip\.test\/\)/, 'llms.txt lists the main public pages');
+        // AGT-5: the page is linked at its Markdown twin; files keep their URL; ## Optional is last.
+        assert.match(llms.text, /\[Creators with published plans\]\(http:\/\/vip\.test\/index\.md\)/, 'llms.txt lists the main public pages');
+        assert.ok(llms.text.includes('(http://vip.test/sitemap.xml)') && llms.text.includes('(http://vip.test/updates.md)'));
+        assert.ok(llms.text.includes('\n## Optional\n') && llms.text.lastIndexOf('\n## ') === llms.text.indexOf('\n## Optional\n'), 'Optional is last');
         const full = await t.call('GET', '/llms-full.txt', { token: null });
         assert.strictEqual(full.status, 200);
         assert.match(full.headers.get('content-type'), /^text\/plain/);

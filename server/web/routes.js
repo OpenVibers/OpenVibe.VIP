@@ -114,20 +114,23 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
         res.type('application/xml').send(seo.sitemapXml(urls));
     });
     // /llms.txt (llmstxt.org): a plain-markdown map of the site for language-model crawlers.
+    // AGT-5: own pages link their Markdown twins (openvibe-shared 4.108.0); ## Optional is what an agent may skip.
     router.get('/llms.txt', (req, res) => res.type('text/plain').send(seo.llmsTxt({
         name: LLMS_NAME,
         summary: LLMS_SUMMARY,
         details: LLMS_DETAILS,
+        markdown: true,
+        base: config.baseUrl,
         sections: [
             { title: 'Start here', links: [
                 { title: 'Creators with published plans', url: `${config.baseUrl}/`, note: 'every creator on OpenVibe.VIP, with their public plans' },
-                { title: 'What shipped on OpenVibe.VIP', url: `${config.baseUrl}/updates` },
             ] },
-            { title: 'Machine-readable', links: [
-                { title: 'Sitemap', url: `${config.baseUrl}/sitemap.xml`, note: 'the public pages, with lastmod' },
-                { title: 'robots.txt', url: `${config.baseUrl}/robots.txt` },
-                { title: 'llms-full.txt', url: `${config.baseUrl}/llms-full.txt`, note: 'the full text of every public page' },
-            ] },
+        ],
+        optional: [
+            { title: 'What shipped on OpenVibe.VIP', url: `${config.baseUrl}/updates` },
+            { title: 'Sitemap', url: `${config.baseUrl}/sitemap.xml`, note: 'the public pages, with lastmod' },
+            { title: 'robots.txt', url: `${config.baseUrl}/robots.txt` },
+            { title: 'llms-full.txt', url: `${config.baseUrl}/llms-full.txt`, note: 'the full text of every public page' },
         ],
     })));
 
