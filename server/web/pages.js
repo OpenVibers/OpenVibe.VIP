@@ -8,6 +8,7 @@
  * no begging copy.
  */
 const showcase = require('openvibe-shared/showcase');
+const glyphs = require('openvibe-shared/glyphs');
 const { esc } = require('../util');
 
 const fmtDate = (s) => {
@@ -68,6 +69,10 @@ function homeFaqJsonLd() {
 }
 
 const S = require('./short');
+// The shared lock glyph (openvibe-shared/glyphs), drawn on the server: the same drawing the network's
+// icons use, without a script or a font. It carries its own aria-hidden, so a screen reader reads the
+// line, not the lock.
+const lockGlyph = '<span style="display:inline-block;width:1.05em;height:1.05em;line-height:1;vertical-align:-.18em;margin-right:.3em">' + glyphs.svg('lock', { size: 16 }) + '</span>';
 const avatar = (networkUrl, username, size) => `<img class="vip-avatar" src="${esc(networkUrl)}/avatar/${encodeURIComponent(username)}?s=${size}" width="${size}" height="${size}" alt="" loading="lazy" decoding="async">`;
 const plural = (n, one, many) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
 
@@ -175,9 +180,12 @@ function postsSection(posts) {
         const tiers = p.tiers.length ? p.tiers.map((t) => `Tier ${t}`).join(', ') : 'a tier';
         const meta = `<p class="muted small">${esc(tiers)}${p.published_at ? ` · ${fmtDate(p.published_at)}` : ''}</p>`;
         const image = p.image && p.image.url ? `<p><img src="${esc(p.image.url)}" alt="" style="max-width:100%;height:auto"></p>` : '';
+        // A locked post: the line, and a way in only when a tier that reads it can be joined. A button
+        // that leads nowhere is worse than no button.
         const body = p.unlocked
             ? `<div class="post-body">${p.body_html}</div>`
-            : `<p class="muted">This post is for the members of ${esc(tiers)}.</p><p><a class="button" href="${esc(p.join_url)}">Become a member</a></p>`;
+            : `<p class="muted">${lockGlyph}This post is for the members of ${esc(tiers)}${p.join_url ? '.' : ', which is not open to join yet.'}</p>`
+                + (p.join_url ? `<p><a class="button" href="${esc(p.join_url)}">Become a member</a></p>` : '');
         return `<article class="card post"><h3>${esc(p.title)}</h3>${meta}${image}${body}</article>`;
     }).join('');
     return `<section class="posts" aria-labelledby="posts-h"><h2 id="posts-h">Members-only posts</h2>

@@ -254,6 +254,11 @@ test('the renderer escapes everything but the marks, and the page shows a locked
     assert.ok(!locked.includes('post-body'), 'a locked post carries no text');
     const open = pages.postsSection([{ title: 'Studio notes', tiers: [1], published_at: '2026-01-02T00:00:00.000Z', image: null, unlocked: true, body_html: '<p>The mix.</p>', join_url: '/lena' }]);
     assert.ok(open.includes('<p>The mix.</p>'), 'a member reads the text');
+    // A locked post whose tier cannot be joined: the line, no button.
+    const closed = pages.postsSection([{ title: 'Studio notes', tiers: [2], published_at: '2026-01-02T00:00:00.000Z', image: null, unlocked: false, body_html: null, join_url: null }]);
+    assert.ok(closed.includes('This post is for the members of Tier 2, which is not open to join yet.'), 'the line says the tier is not open');
+    assert.ok(!closed.includes('Become a member'), 'no button that leads nowhere');
+    assert.ok(closed.includes('aria-hidden="true"'), 'the lock glyph is decorative');
 });
 
 test('a post is written for a tier the creator sells, and the domain refuses the others', async () => {
@@ -287,6 +292,30 @@ test('a post is written for a tier the creator sells, and the domain refuses the
         const client = createMediaClient({ config: { ...t.config, oauth: { ...t.config.oauth, clientSecret: '' } } });
         assert.strictEqual(client.configured, false);
         await assert.rejects(() => client.uploadImage({ buffer: Buffer.from('x'), mime: 'image/png', filename: 'x.png' }), /service principal/);
+    } finally { await t.close(); }
+});
+
+test('a locked post offers a way to join only when a tier that reads it can be joined', async () => {
+    const t = await boot();
+    try {
+        const creator = t.network.newUser('lena');
+        const stranger = t.network.newUser('nils');
+        // Tier 1 sells; tier 2 has no price, so it cannot be joined.
+        await publishTiers(t, creator, [1, 2]);
+        await writePost(t, creator, { title: 'Joinable', body: 'For the first row.', tiers: ['1'] });
+        await writePost(t, creator, { title: 'Not joinable', body: 'For the second row.', tiers: ['2'] });
+
+        const out = await t.page('/lena', { user: stranger });
+        // The tier-1 post: the button, and it points at the plan that opens it.
+        assert.strictEqual((out.text.match(/Become a member/g) || []).length, 1, 'only the joinable post offers a way in');
+        assert.ok(out.text.includes('/lena#plan-tier-1-plan'), 'the link points at the plan that reads it');
+        // The tier-2 post: no button, and the line says why.
+        assert.ok(out.text.includes('This post is for the members of Tier 2, which is not open to join yet.'));
+        assert.ok(!out.text.includes('/lena#plan-tier-2-plan'), 'no link to a plan that cannot be joined');
+        assert.ok(!out.text.includes('For the first row.'), 'no text of a locked post, either way');
+        assert.ok(!out.text.includes('For the second row.'));
+        // The lock glyph before the line, drawn by the shared glyph set and hidden from a screen reader.
+        assert.ok(/aria-hidden="true"><rect x="5" y="11"/.test(out.text), 'the shared lock glyph is on the line');
     } finally { await t.close(); }
 });
 

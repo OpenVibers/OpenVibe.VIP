@@ -427,7 +427,11 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
             const posts = [];
             for (const row of await domain.posts.rows({ creatorId: c.id })) {
                 const tiers = domain.posts.tiersOf(row);
-                const target = list.filter((p) => p.purchasable && p.tier && tiers.includes(p.tier)).sort((a, b) => a.tier - b.tier)[0];
+                // The plan that opens this post: the cheapest tier that reads it and can be joined (a tier
+                // above it reads it too). When no such plan can be joined, the post offers no way in — a
+                // primary button must never lead to a dead end.
+                const needed = tiers.length ? Math.min(...tiers) : null;
+                const target = needed == null ? null : list.filter((p) => p.purchasable && p.tier && p.tier >= needed).sort((a, b) => a.tier - b.tier)[0];
                 const access = isOwner
                     ? { unlocked: true }
                     : await domain.posts.access({
@@ -438,7 +442,7 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
                     id: row.id, title: row.title, tiers, published_at: row.published_at,
                     image: row.image_id ? { id: row.image_id, url: row.image_url } : null,
                     unlocked: !!access.unlocked, body_html: access.unlocked ? row.body_html : null,
-                    join_url: target ? `/${encodeURIComponent(c.username)}#plan-${encodeURIComponent(target.slug)}` : `/${encodeURIComponent(c.username)}`,
+                    join_url: target ? `/${encodeURIComponent(c.username)}#plan-${encodeURIComponent(target.slug)}` : null,
                 });
             }
             send(res, 200, {

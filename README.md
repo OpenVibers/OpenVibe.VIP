@@ -205,6 +205,12 @@ the body is served only after that check. So:
 * a member of another tier reads nothing;
 * a hidden post is not served at all — not its title, not its text.
 
+A locked post offers a way in only when a tier that reads it can be joined: the "Become a member" button
+points at the cheapest such plan. When none can be joined (the plan has no price yet, or is not sold
+through Billing), the post says so — "This post is for the members of Tier 2, which is not open to join
+yet." — and offers no button, because a primary button must never lead to a dead end. The line carries
+the shared lock glyph.
+
 The creator reads their own posts (on their page and on the dashboard). Staff hide any creator's post,
 the way they manage network plans; a creator may hide their own, but cannot bring back a post staff
 hid. A post's author reference is anonymized when the creator's account is deleted (ADR-033), like
