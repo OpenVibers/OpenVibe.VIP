@@ -27,6 +27,9 @@ const CAP = {
     policySet: 'vip.resource.policy.set',
     policyEvaluate: 'vip.resource.policy.evaluate',
     members: 'vip.creator.members.list',
+    postCreate: 'vip.post.create',
+    postList: 'vip.post.list',
+    postModerate: 'vip.post.moderate',
 };
 
 function v1Router({ domain, apiAuth, limits }) {
@@ -379,6 +382,85 @@ function v1Router({ domain, apiAuth, limits }) {
             }))));
             return res.json({ creator: creators.present(c), source: 'projection', note: 'Billing did not answer; this list is VIP\'s projection (fresh rows only) and may be incomplete', members });
         }
+    }));
+
+    // ── Members-only posts ───────────────────────────────────
+    // The text of a post is served only after the entitlement check (Billing's truth): the list never
+    // carries it, and /posts/:id/body answers the member of the tier the post is written for.
+    const postCreator = async (req) => {
+        const c = await findCreator(req.params.ref);
+        if (!c || !c.subject) fail(404, 'vip.creator_not_found', 'no such creator');
+        return c;
+    };
+    const postRow = async (req, c) => {
+        const row = await domain.posts.byId(req.params.id);
+        if (!row || row.creator_id !== c.id) fail(404, 'vip.post_not_found', 'no such post');
+        return row;
+    };
+    /** May this caller read the text of this post? The creator and staff may; a member of the tier may. */
+    const postAccess = async (req, c, row) => {
+        const p = req.principal;
+        if (p.kind === 'user' && (p.subject === c.subject || isStaff(p))) return { unlocked: true, tier: null };
+        if (p.kind !== 'user') return { unlocked: false, reason: 'not_a_member', tier: null };
+        return await domain.posts.access({ post: row, memberSubject: p.subject, creatorSubject: c.subject, creatorId: c.id, traceparent: trace(req) });
+    };
+    r.get('/creators/:ref/posts', wrap(async (req, res) => {
+        const c = await postCreator(req);
+        const own = mayManage(req.principal, c, CAP.postList);
+        const posts = [];
+        for (const row of await domain.posts.rows({ creatorId: c.id, includeHidden: own })) {
+            const access = await postAccess(req, c, row);
+            posts.push(domain.posts.present(row, { unlocked: !!access.unlocked, tier: access.tier || null }));
+        }
+        res.json({ creator: creators.present(c), posts });
+    }));
+    r.get('/creators/:ref/posts/:id', wrap(async (req, res) => {
+        const c = await postCreator(req);
+        const row = await postRow(req, c);
+        const own = mayManage(req.principal, c, CAP.postList);
+        if (row.status === 'hidden' && !own) fail(404, 'vip.post_not_found', 'no such post');
+        const access = await postAccess(req, c, row);
+        res.json({ post: domain.posts.present(row, { unlocked: !!access.unlocked, tier: access.tier || null }) });
+    }));
+    // The text itself: only a member of the tier the post is written for (or the creator, or staff).
+    r.get('/creators/:ref/posts/:id/body', wrap(async (req, res) => {
+        const c = await postCreator(req);
+        const row = await postRow(req, c);
+        needAuth(req.principal);
+        const staff = req.principal.kind === 'user' && isStaff(req.principal);
+        if (row.status === 'hidden' && !(staff || req.principal.subject === c.subject)) fail(404, 'vip.post_not_found', 'no such post');
+        const access = await postAccess(req, c, row);
+        if (!access.unlocked) fail(403, 'vip.member_only', 'this post is for the members of another tier');
+        res.json({ post_id: row.id, tier: access.tier || null, body: row.body, body_html: row.body_html });
+    }));
+    r.post('/creators/:ref/posts', create, wrap(async (req, res) => {
+        const b = req.body || {};
+        const c = await postCreator(req);
+        requireManage(req, c, CAP.postCreate);
+        const actor = req.principal.kind === 'service' ? req.principal.sub : req.principal.subject;
+        let image = null;
+        if (b.image && b.image.id) {
+            const url = b.image.url ? String(b.image.url) : null;
+            if (url && !url.startsWith(domain.config.media.url)) fail(422, 'vip.invalid_input', 'the image must be an object stored in OpenVibe.Media');
+            image = { id: String(b.image.id), url };
+        }
+        const row = await domain.posts.create({ creatorId: c.id, title: b.title, body: b.body, tiers: b.tiers, image, actor, traceparent: trace(req) });
+        res.status(201).json({ post: domain.posts.present(row, { unlocked: true }) });
+    }));
+    // Moderation (the way staff hide a post): the creator hides their own, staff hides anyone's.
+    r.post('/posts/:id/hide', create, wrap(async (req, res) => {
+        const row = await domain.posts.byId(req.params.id);
+        if (!row) fail(404, 'vip.post_not_found', 'no such post');
+        requireManage(req, await creators.byId(row.creator_id), CAP.postModerate);
+        const actor = req.principal.kind === 'service' ? req.principal.sub : req.principal.subject;
+        res.json({ post: domain.posts.present(await domain.posts.hide(row.id, { actor, reason: req.body && req.body.reason })) });
+    }));
+    r.post('/posts/:id/unhide', create, wrap(async (req, res) => {
+        const row = await domain.posts.byId(req.params.id);
+        if (!row) fail(404, 'vip.post_not_found', 'no such post');
+        requireManage(req, await creators.byId(row.creator_id), CAP.postModerate);
+        const actor = req.principal.kind === 'service' ? req.principal.sub : req.principal.subject;
+        res.json({ post: domain.posts.present(await domain.posts.unhide(row.id, { actor, staff: isStaff(req.principal) })) });
     }));
 
     return r;

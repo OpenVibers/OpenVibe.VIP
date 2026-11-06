@@ -29,6 +29,9 @@ const TABLES = [
     { table: 'vip_plan_versions', subject: 'created_by', file: 'plan-versions.json', columns: ['id', 'plan_id', 'version', 'name', 'description', 'benefits', 'terms', 'change_note', 'created_at', 'published_at'], erase: { keep: 'plan versions are the immutable terms members joined under' } },
     { table: 'vip_perks', subject: 'created_by', file: 'perks.json', columns: ['id', 'creator_id', 'key', 'name', 'description', 'kind', 'status', 'created_at'], erase: anonymize },
     { table: 'vip_gated_resource_rules', subject: 'created_by', file: null, erase: anonymize },
+    // The posts a creator wrote: theirs to take away with them (the author reference goes), but the posts
+    // themselves stay with the creator row, which is suspended and no longer served.
+    { table: 'vip_member_posts', subject: 'created_by', file: 'posts.json', columns: ['id', 'creator_id', 'title', 'body', 'tiers', 'status', 'image_id', 'published_at', 'created_at'], order: 'created_at', erase: anonymize },
 ];
 
 /** The creator row stays (it is referenced; counted as retained above) but is suspended and loses what names the person. */

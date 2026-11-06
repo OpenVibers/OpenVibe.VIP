@@ -8,6 +8,7 @@
  * no begging copy.
  */
 const showcase = require('openvibe-shared/showcase');
+const glyphs = require('openvibe-shared/glyphs');
 const { esc } = require('../util');
 
 const fmtDate = (s) => {
@@ -68,6 +69,10 @@ function homeFaqJsonLd() {
 }
 
 const S = require('./short');
+// The shared lock glyph (openvibe-shared/glyphs), drawn on the server: the same drawing the network's
+// icons use, without a script or a font. It carries its own aria-hidden, so a screen reader reads the
+// line, not the lock.
+const lockGlyph = '<span style="display:inline-block;width:1.05em;height:1.05em;line-height:1;vertical-align:-.18em;margin-right:.3em">' + glyphs.svg('lock', { size: 16 }) + '</span>';
 const avatar = (networkUrl, username, size) => `<img class="vip-avatar" src="${esc(networkUrl)}/avatar/${encodeURIComponent(username)}?s=${size}" width="${size}" height="${size}" alt="" loading="lazy" decoding="async">`;
 const plural = (n, one, many) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
 
@@ -165,8 +170,61 @@ if (e.active) unlockPro();   // expired, unknown or unreachable all answer no`,
     return S.foldSection(body, 'id="questions"', 'questions-fold');
 }
 
+/**
+ * The creator page's members-only posts. The title is public; the text is only ever rendered for a
+ * member of a tier the post is written for (the route decides that, after the entitlement check).
+ */
+function postsSection(posts) {
+    if (!posts.length) return '';
+    const items = posts.map((p) => {
+        const tiers = p.tiers.length ? p.tiers.map((t) => `Tier ${t}`).join(', ') : 'a tier';
+        const meta = `<p class="muted small">${esc(tiers)}${p.published_at ? ` · ${fmtDate(p.published_at)}` : ''}</p>`;
+        const image = p.image && p.image.url ? `<p><img src="${esc(p.image.url)}" alt="" style="max-width:100%;height:auto"></p>` : '';
+        // A locked post: the line, and a way in only when a tier that reads it can be joined. A button
+        // that leads nowhere is worse than no button.
+        const body = p.unlocked
+            ? `<div class="post-body">${p.body_html}</div>`
+            : `<p class="muted">${lockGlyph}This post is for the members of ${esc(tiers)}${p.join_url ? '.' : ', which is not open to join yet.'}</p>`
+                + (p.join_url ? `<p><a class="button" href="${esc(p.join_url)}">Become a member</a></p>` : '');
+        return `<article class="card post"><h3>${esc(p.title)}</h3>${meta}${image}${body}</article>`;
+    }).join('');
+    return `<section class="posts" aria-labelledby="posts-h"><h2 id="posts-h">Members-only posts</h2>
+<p class="muted small">Posts for the members of a tier. The title is public; the text is not.</p>
+<div class="post-list">${items}</div></section>`;
+}
+
+/**
+ * The dashboard's posts: the composer, the creator's own posts (with the text they wrote) and, for
+ * staff, the moderation list over every creator's posts.
+ */
+function postsAdmin({ posts, tiers, moderation, token, base }) {
+    const composer = tiers.length ? `<details class="card"><summary>New post</summary>
+<form method="post" action="${base}/posts" enctype="multipart/form-data">${csrf(token)}
+<label>Title <input name="title" maxlength="140" required></label>
+<label>Text (Markdown) <textarea name="body" rows="6" required></textarea></label>
+<fieldset><legend>Who reads it</legend>${tiers.map((t) => `<label class="check"><input type="checkbox" name="tiers" value="${t}"> Tier ${t}</label>`).join('')}</fieldset>
+<label>Image (optional) <input type="file" name="image" accept="image/png,image/jpeg,image/webp,image/gif"></label>
+<p class="muted small">A member of a higher tier reads posts written for a lower tier too. The text is only ever sent to members.</p>
+<button type="submit">Publish post</button></form></details>`
+        : '<p class="muted">Publish a plan first: a post is written for the members of one of your tiers.</p>';
+    const mine = posts.length ? posts.map((p) => `<article class="card post"><h3>${esc(p.title)}</h3>
+<p class="muted small">${esc(p.tiers.map((t) => `Tier ${t}`).join(', '))} · ${fmtDate(p.published_at)} · <span class="pill">${esc(p.status)}</span></p>
+${p.image && p.image.url ? `<p><img src="${esc(p.image.url)}" alt="" style="max-width:100%;height:auto"></p>` : ''}
+<div class="post-body">${p.body_html}</div>
+<form method="post" action="${base}/posts/${esc(p.id)}/${p.status === 'hidden' ? 'unhide' : 'hide'}" class="inline">${csrf(token)}<button type="submit" class="button-quiet">${p.status === 'hidden' ? 'Show again' : 'Hide'}</button></form>
+</article>`).join('') : '<p class="muted">No posts yet.</p>';
+    const mod = moderation && moderation.length ? `<section><h2>Moderation</h2>
+<ul class="rules">${moderation.map((m) => `<li><b>${esc(m.title)}</b> · ${esc(m.creator)} · ${esc(m.tiers.map((t) => `Tier ${t}`).join(', '))} · <span class="pill">${esc(m.status)}</span>
+<form method="post" action="/dashboard/moderation/posts/${esc(m.id)}/hide" class="inline">${csrf(token)}<button type="submit" class="button-quiet">Hide</button></form>
+<form method="post" action="/dashboard/moderation/posts/${esc(m.id)}/unhide" class="inline">${csrf(token)}<button type="submit" class="button-quiet">Show again</button></form></li>`).join('')}</ul></section>` : '';
+    return `<section><h2>Members-only posts</h2>
+<p class="muted small">A post is written for the members of one or more of your tiers. Only a member of that tier reads the text; everyone else sees the title and a way to join.</p>
+${composer}
+${mine}</section>${mod}`;
+}
+
 /** The creator's public plan page. */
-function creatorPage({ creator, plans, viewer, member, rates, providers, token, query, isOwner }) {
+function creatorPage({ creator, plans, viewer, member, rates, providers, token, query, isOwner, posts = [] }) {
     const name = creator.display_name || creator.username;
     const status = member && member.status === 'active'
         ? `<div class="card member-box"><p><b>You are a member.</b> ${member.cancel_at_period_end ? `Your membership ends on ${fmtDate(member.expires_at)}.` : `Paid through ${fmtDate(member.expires_at)}.`}</p>
@@ -201,7 +259,8 @@ ${join}
 ${creator.bio ? `<p>${esc(creator.bio)}</p>` : ''}</section>
 ${notice(query)}
 ${status}
-<section class="plans">${planCards}</section>`;
+<section class="plans">${planCards}</section>
+${postsSection(posts)}`;
 }
 
 /** Public terms history of one plan: every published version, unchanged. */
@@ -295,7 +354,7 @@ function shareCard({ creator, embeds, hasPlan }) {
 <label>Card for developers (JSON, open to any site) <input readonly value="${esc(embeds.card)}"></label></section>`;
 }
 
-function dashboard({ viewer, creator, isNetwork, isStaff, plans, allPerks, ownPerks, members, membersSource, rules, token, query, base, embeds, priceTable = null }) {
+function dashboard({ viewer, creator, isNetwork, isStaff, plans, allPerks, ownPerks, members, membersSource, rules, token, query, base, embeds, priceTable = null, posts = [], postTiers = [], moderation = [] }) {
     if (!viewer) {
         return `<section class="card narrow"><h1>Creator dashboard</h1><p>Sign in with your OpenVibe account to offer a membership plan.</p>
 <p><a class="button" href="/auth/login?next=%2Fdashboard">Sign in</a></p></section>`;
@@ -337,7 +396,7 @@ ${ownPerks.length ? `<ul class="perk-admin">${ownPerks.map((p) => `<li><details>
 <label>Kind <select name="kind">${['badge', 'emote', 'gated_content', 'room', 'role', 'other'].map((k) => `<option>${k}</option>`).join('')}</select></label>
 <label>Product bindings, one "product binding" per line (e.g. <code>chat badge</code>) <textarea name="bindings" rows="2"></textarea></label>
 <button type="submit">Create perk</button></form></details></section>
-${isNetwork ? '' : `<section><h2>Members</h2>
+${isNetwork ? '' : `${postsAdmin({ posts, tiers: postTiers, moderation, token, base })}<section><h2>Members</h2>
 ${members.length ? `<table class="members"><thead><tr><th>Member</th><th>Plan version</th><th>Paid through</th></tr></thead><tbody>${members.map((m) => `<tr><td><code>${esc(m.member.id)}</code></td><td>${m.membership && m.membership.plan_version ? `${esc(m.membership.plan_version.name)} v${esc(m.membership.plan_version.version)}` : '—'}</td><td>${fmtDate(m.current_period_end)}${m.cancel_at_period_end ? ' (ends)' : ''}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No active members.</p>'}
 <p class="muted small">${membersSource === 'billing' ? 'From OpenVibe.Billing.' : 'OpenVibe.Billing did not answer; this is VIP\'s recent projection and may be incomplete.'}</p></section>
 <section><h2>Members-only resources</h2>
@@ -357,5 +416,5 @@ ${rules.length ? `<ul class="rules">${rules.map((r) => `<li><code>${esc(r.resour
 
 module.exports = {
     HOME_TITLE, HOME_DESCRIPTION, HOME_FAQ, homeFaqJsonLd,
-    errorPage, home, creatorPage, planHistory, memberPage, checkoutPage, dashboard, fmtDate,
+    errorPage, home, creatorPage, planHistory, memberPage, checkoutPage, dashboard, postsSection, fmtDate,
 };

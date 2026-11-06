@@ -25,6 +25,7 @@ const { loadConfig } = require('./config');
 const { openDb } = require('./db');
 const { createKeyProvider, createUserAuth } = require('./network');
 const { createBillingClient } = require('./billing-client');
+const { createMediaClient } = require('./media-client');
 const { createVipOutbox } = require('./events/outbox');
 const { consumerRouter } = require('./events/consumer');
 const accountDataLib = require('./domain/account-data');
@@ -60,7 +61,9 @@ async function createApp(opts = {}) {
     const indexnow = opts.indexnow !== undefined ? opts.indexnow : createIndexNow({
         host: config.baseUrl, key: config.indexnow.key, fetch: fetchImpl, log,
     });
-    const domain = createDomain({ db, config, outbox, billing, now, log, indexnow });
+    // OpenVibe.Media (the image on a members-only post). Tests inject a stand-in through opts.media.
+    const media = opts.media || createMediaClient({ config, fetchImpl });
+    const domain = createDomain({ db, config, outbox, billing, now, log, indexnow, media });
     const apiAuth = createApiAuth({ config, keys, userAuth });
     const release = require('openvibe-shared/release').createRelease({ service: 'vip', root: path.join(__dirname, '..') });
     setRelease(release.release);

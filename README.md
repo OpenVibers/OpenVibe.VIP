@@ -59,6 +59,7 @@ transactions, not an authority for anything.
   and its events `billing.entitlement.changed`, `billing.subscription.canceled`, `billing.transaction.reversed`.
 - **OpenVibe.Network** — RS256 service and user tokens (JWKS), OAuth sign-in for the pages.
 - **OpenVibe.Events** — delivery of Billing's events to `/internal/events`; relay of VIP's outbox.
+- **OpenVibe.Media** — the image on a members-only post (`media.object.upload`, the `vip` tenant): the bytes live in Media, VIP keeps the `med_` reference. Without a service principal the post is written without an image.
 - **PostgreSQL 18 and Valkey 9** (OpenVibe.Host `roles/data/`, ADR-035): every read and write is async through `openvibe-sdk/db`; Valkey holds the per-actor limit counters (optional).
 - **openvibe-contracts** v0.76.0, **openvibe-sdk** v0.28.0 (outbox, inbox, delivery signatures, per-actor
   limits), **openvibe-shared** v2.2.0 (Frame, legal pages, release manifest and update metrics, metrics,
@@ -188,6 +189,33 @@ The three Events subscriptions exist.
 - Cancel is the member's own action: VIP confirms with Billing that the subscription is theirs, then
   Billing `POST /subscriptions/:id/cancel` (at period end).
 
+### Members-only posts (the creator's own posts)
+
+A creator writes posts for the members of one or more of their tiers (Billing's tiers of that creator,
+`vip_plans.billing_tier`). A post carries a title, a body in Markdown (rendered to safe HTML: the
+source can never carry markup) and an optional image (a Media object — the bytes live in
+OpenVibe.Media under VIP's tenant, the post keeps the `med_` reference).
+
+Who may read the text is never stored: it is answered on every request by the entitlement check
+(Billing's truth, projected) and the tier the member holds. The list of posts never carries a body, and
+the body is served only after that check. So:
+
+* a signed-out visitor and a non-member see the title, the tier it needs and a way to join — never the text;
+* a member of a tier reads a post written for their tier or for a lower one (a higher tier includes the lower);
+* a member of another tier reads nothing;
+* a hidden post is not served at all — not its title, not its text.
+
+A locked post offers a way in only when a tier that reads it can be joined: the "Become a member" button
+points at the cheapest such plan. When none can be joined (the plan has no price yet, or is not sold
+through Billing), the post says so — "This post is for the members of Tier 2, which is not open to join
+yet." — and offers no button, because a primary button must never lead to a dead end. The line carries
+the shared lock glyph.
+
+The creator reads their own posts (on their page and on the dashboard). Staff hide any creator's post,
+the way they manage network plans; a creator may hide their own, but cannot bring back a post staff
+hid. A post's author reference is anonymized when the creator's account is deleted (ADR-033), like
+their plans and perks.
+
 ### Events (openvibe-sdk outbox, same transaction as the change)
 
 | Event | When | Payload |
@@ -227,6 +255,15 @@ handle or `network`.
 | `POST /policies`, `DELETE /policies/:id` | `vip.resource.policy.set` | owner | gate / un-gate a resource `{resource, requirement: member\|plan\|perk, plan_id, perk_key, sensitive}` |
 | `POST /policies/evaluate` `{subject, resource, owner, rule_id?, mode?, fallback?}` — `owner` = the creator the PRODUCT says owns the resource (usr_ id or `network`); only that creator's rule applies, none → `owner_required`. `fallback` `{ requirement: 'member', binding?: 'product:binding' }` = the product's default gate, used only when the owner has no rule (below) | `vip.resource.policy.evaluate` | self | `{ allow, reason, rule, entitlement, fallback? }` — **fails closed** |
 | `GET /creators/:ref/members` | `vip.creator.members.list` | owner / staff | active members with their plan version; from Billing, or the labelled projection when Billing is down |
+| `GET /creators/:ref/posts` | — (public) | owner sees the hidden posts too | the posts of a creator: title, tiers, image, date — never the text |
+| `GET /creators/:ref/posts/:id` | — (public) | owner / staff | one post; the text only for a member of its tier (or the creator, or staff) |
+| `GET /creators/:ref/posts/:id/body` | — | the member of the tier, the creator, staff | the text: 401 signed out, 403 not a member, 404 hidden |
+| `POST /creators/:ref/posts` | `vip.post.create` | the creator | write a post `{title, body, tiers}` for one or more of the creator's tiers |
+| `POST /posts/:id/hide`, `POST /posts/:id/unhide` | `vip.post.moderate` | the creator, staff | hide a post (nobody reads it any more), show it again |
+
+The `vip.post.*` ids are not in openvibe-contracts yet, so no service can hold them: people (the
+creator, staff) write and moderate posts without a capability. A service that wants to needs a
+contracts entry first.
 
 Evaluate reasons: `member`, `owner`, `no_rule`, `rule_mismatch`, `rule_disabled`, `invalid_resource`,
 `invalid_fallback`, `creator_unavailable`, `not_signed_in`, `not_a_member`, `entitlement_unknown`,
@@ -328,9 +365,11 @@ memberships* card gives the creator the badge and widget HTML and the card URL.
 ## Pages (server-rendered, useful without JavaScript, OpenVibe Frame)
 
 `/` directory of creators with published plans · `/:username` a creator's plans (terms, perks,
-Billing's price and period from `GET /api/v1/rates`, join form) · `/:username/plans/:slug` public terms
+Billing's price and period from `GET /api/v1/rates`, join form) and their members-only posts (the
+title and the tier are public, the text only for a member of that tier) · `/:username/plans/:slug` public terms
 history · `/me` your memberships, the version you joined under, cancel, badge preference ·
-`/dashboard` plans, versions, perks and bindings, members, members-only resources, the badge and
+`/dashboard` plans, versions, perks and bindings, members, members-only resources, the members-only
+posts (write, hide) and, for staff, the moderation list, the badge and
 widget to share and the member-count switch (`?as=network` for staff) · `/embed/:username/…` (above) · `/robots.txt`, `/sitemap.xml`, `/llms.txt`, `/llms-full.txt` · `/terms`, `/privacy`, `/dmca`
 (openvibe-shared legal). Navbar from `https://openvibe.network/shared/navbar.js`, SSR footer and
 `<noscript>` navigation from openvibe-shared. Forms carry HMAC anti-forgery tokens
@@ -426,6 +465,7 @@ Reporting a vulnerability: [SECURITY.md](SECURITY.md).
 | a creator's membership card, badge and widget are public-data only, the same for everyone, embeddable and inert | `test/embeds.test.js` (published plans only, no subjects or binding configs, no cookie read or set, CORS, SVG escaping and sandbox, the widget's frame-ancestors and hashed style, the creator's member-count switch, Billing outage keeps the last count or shows none) |
 | `/llms-full.txt` carries the full text of the home, creator and plan pages, and is cached for an hour | `test/llms-full.test.js`, `test/api.test.js` (discovery artifacts) |
 | IndexNow is off without `INDEXNOW_KEY` (no key route, nothing sent); with one the key file is served at `/<key>.txt` as `text/plain` and publishing, editing and archiving a plan ping the creator page, the terms page and the sitemap; a draft and an unchanged edit never ping | `test/indexnow.test.js` |
+| members-only posts: a member of the tier reads the text, a non-member and a signed-out visitor do not (page and API), the creator reads their own, staff hide any post, and the Markdown never carries markup | `test/member-posts.test.js` (the tier rules, the API, the moderation, the Media image, the renderer) |
 
 Not yet demonstrated (needs the other services): convergence **across consuming products** end to end
 (Chat, Community, Blog and Wiki call VIP in code; Live does not), and a real Billing/Events round trip

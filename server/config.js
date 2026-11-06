@@ -75,6 +75,14 @@ function loadConfig(env = process.env) {
             graceMs: int(env.VIP_PROJECTION_GRACE_MS, 60 * 1000),
         },
 
+        // OpenVibe.Media: the image on a members-only post. The bytes live in Media under VIP's tenant
+        // (the namespace VIP's service token holds media.object.upload for); VIP keeps the med_ reference.
+        media: {
+            url: trim(env.OV_MEDIA_URL || 'https://openvibe.media'),
+            internalUrl: trim(env.OV_MEDIA_INTERNAL_URL || 'http://127.0.0.1:4100'),
+            app: String(env.VIP_MEDIA_APP || 'vip').trim() || 'vip',
+        },
+
         events: {
             url: trim(env.EVENTS_URL || ''),
             intervalMs: int(env.EVENTS_RELAY_INTERVAL_MS, 2000),
