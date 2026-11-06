@@ -20,6 +20,7 @@
  * it means "unknown", never "yes").
  */
 const { createCommerceClient, CommerceError } = require('openvibe-sdk/commerce');
+const { assertionHeader } = require('./subject-assertion');
 
 const BillingCallError = CommerceError;
 
@@ -39,20 +40,23 @@ function createBillingClient(config, { fetchImpl = globalThis.fetch, tokenClient
 
     return {
         /** { intent, checkout_url } — a subscription checkout for `subject` to `creator`. */
-        createIntent: async ({ provider, subject, creator, tier, autoRenew, successUrl, cancelUrl, key, traceparent }) => await commerce.createIntent({
+        createIntent: async ({ provider, subject, creator, tier, autoRenew, successUrl, cancelUrl, key, traceparent, assertion }) => await commerce.createIntent({
             provider, kind: 'subscription', subject, creator, tier, autoRenew, successUrl, cancelUrl, key, traceparent,
+            ...(assertion ? { headers: assertionHeader(assertion) } : {}),
         }),
         /** { subscription, entitlement, transaction } — one period paid from the member's credit, at the tier's price. */
-        subscribeWithCredit: async ({ subscriber, creator, tier, autoRenew, key, traceparent }) => await commerce.subscribeWithCredit({ subscriber, creator, tier, autoRenew, key, traceparent }),
+        subscribeWithCredit: async ({ subscriber, creator, tier, autoRenew, key, traceparent, assertion }) => await commerce.subscribeWithCredit({
+            subscriber, creator, tier, autoRenew, key, traceparent, ...(assertion ? { headers: assertionHeader(assertion) } : {}),
+        }),
         /** A creator's tier prices on Billing: { tiers: [{ tier, price_cents, status }], default_price_cents, min/max_price_cents, max_tiers }. */
         listTiers: async (creator) => await commerce.listTiers(creator),
         /** { tier } — set one tier's monthly price (billing.tier.manage). */
         setTier: async ({ creator, tier, priceCents, status, key, traceparent }) => await commerce.setTier({ creator, tier, priceCents, status, key, traceparent }),
-        cancelSubscription: async ({ id, key, traceparent }) => await commerce.cancelSubscription({ id, key, traceparent }),
-        getSubscription: async (id) => await commerce.getSubscription(id),
-        listSubscriptions: async ({ streamer, subscriber, status } = {}) => await commerce.listSubscriptions({ streamer, subscriber, status }),
+        cancelSubscription: async ({ id, key, traceparent, assertion }) => await commerce.cancelSubscription({ id, key, traceparent, ...(assertion ? { headers: assertionHeader(assertion) } : {}) }),
+        getSubscription: async (id, { assertion } = {}) => await commerce.getSubscription(id, { ...(assertion ? { headers: assertionHeader(assertion) } : {}) }),
+        listSubscriptions: async ({ streamer, subscriber, status } = {}, { assertion } = {}) => await commerce.listSubscriptions({ streamer, subscriber, status }, { ...(assertion ? { headers: assertionHeader(assertion) } : {}) }),
         /** { active, expires_at, subscription } — the authoritative answer. */
-        entitlement: async (subject, creator) => await commerce.entitlement(subject, creator),
+        entitlement: async (subject, creator, { assertion } = {}) => await commerce.entitlement(subject, creator, { ...(assertion ? { headers: assertionHeader(assertion) } : {}) }),
         rates: async () => await commerce.rates(),
         baseUrl: () => commerce.baseUrl(),
     };

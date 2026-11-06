@@ -67,6 +67,27 @@ async function startNetwork() {
             const cap = String(body.scope || '').split(/\s+/).filter(Boolean);
             return send(res, 200, { access_token: signService({ sub: `svc:${body.client_id}`, aud: [body.audience], cap }), token_type: 'Bearer', expires_in: 300 });
         }
+        if (req.url === '/internal/subject-assertions' && req.method === 'POST') {
+            // The mint route (ADR-003, the 2026-11-06 amendment): a first-party service hands over the
+            // person's own token and gets back a 60-second assertion naming the person.
+            const v = serviceAuth.verifyServiceToken(String(req.headers.authorization || '').slice(7), { publicKey: publicPem, issuer });
+            if (!v.ok) return send(res, 401, { code: v.code });
+            if (!/^svc:[a-z][a-z0-9-]{1,39}$/.test(String(v.claims.sub || ''))) return send(res, 403, { code: 'assertion.not_a_service' });
+            const body = JSON.parse(raw || '{}');
+            if (!body.user_token) return send(res, 401, { code: 'assertion.no_user_token' });
+            let claims;
+            try { claims = jwt.verify(String(body.user_token), publicPem, { issuer }); } catch { return send(res, 401, { code: 'assertion.invalid_user_token' }); }
+            const subject = claims.subject_id;
+            if (body.subject && body.subject !== subject) return send(res, 403, { code: 'assertion.subject_mismatch' });
+            const audience = Array.isArray(body.audience) ? body.audience : [body.audience];
+            const forServices = [...new Set([v.claims.sub, ...(Array.isArray(body.for) ? body.for : [])])];
+            const jti = `as_${crypto.randomBytes(8).toString('hex')}`;
+            const now = Math.floor(Date.now() / 1000);
+            const b64 = (b) => Buffer.from(b).toString('base64url');
+            const header = b64(JSON.stringify({ alg: 'ES256', typ: 'JWT', kid: 'ov-network-assertion-1' }));
+            const payload = b64(JSON.stringify({ iss: issuer, sub: subject, aud: audience, act: v.claims.sub, for: forServices, jti, iat: now, exp: now + 60 }));
+            return send(res, 200, { assertion: `${header}.${payload}.${b64('signed')}`, subject, audience: body.audience, act: v.claims.sub, for: forServices, jti, expires_in: 60 });
+        }
         send(res, 404, { error: 'not found' });
     });
     const url = await listen(server);
@@ -190,7 +211,7 @@ async function startBilling(network, clock) {
         const raw = await readBody(req);
         const u = new URL(req.url, 'http://x');
         const p = u.pathname;
-        calls.push({ method: req.method, path: p, query: Object.fromEntries(u.searchParams), key: req.headers['idempotency-key'] || null, body: raw ? JSON.parse(raw) : null });
+        calls.push({ method: req.method, path: p, query: Object.fromEntries(u.searchParams), key: req.headers['idempotency-key'] || null, body: raw ? JSON.parse(raw) : null, assertion: req.headers['x-ov-subject-assertion'] || null });
         if (p === '/api/health') return state.down ? send(res, 503, { ok: false }) : send(res, 200, { ok: true });
         if (state.down) { req.socket.destroy(); return undefined; }
         const need = (cap) => { const e = auth(req, cap); if (e) { send(res, e[0], e[1]); return false; } return true; };
