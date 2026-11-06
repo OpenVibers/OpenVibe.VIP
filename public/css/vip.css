@@ -117,7 +117,7 @@ code { background: color-mix(in srgb, var(--text-primary, #fff) 6%, transparent)
   /* The @name stays, a size down, under the name (it was hidden: the owner's rule is never to hide to shorten). */
   .creator-list .vip-creator-text { display: grid; min-width: 0; }
   .creator-list .vip-creator-text b, .creator-list .vip-creator-text .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .creator-list .vip-creator-text .muted { font-size: .74rem; }
+  .creator-list .vip-creator-text .muted { font-size: .75rem; }
   /* The four numbers two by two: all of them on the screen, none behind a sideways scroll a keyboard could not reach. */
   .vip-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .vip-stats dt, .vip-stats dd { overflow-wrap: normal; word-break: normal; }
