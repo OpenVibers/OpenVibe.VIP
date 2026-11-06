@@ -18,6 +18,7 @@ const ovServe = require('openvibe-shared/serve');
 const frame = require('openvibe-shared/frame');
 const seo = require('openvibe-shared/seo');
 const express = require('express');
+const multer = require('multer');
 const { VipError, bool } = require('../util');
 const { viewerMiddleware } = require('./session');
 const { createForms } = require('./forms');
@@ -43,6 +44,11 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
     const isStaff = (v) => !!v && v.staff === true;
     router.use(viewerMiddleware(userAuth));
     const body = express.urlencoded({ extended: false, limit: '32kb' });
+    // The post composer posts a form with an optional image: multipart, one file, 8 MB, in memory.
+    const uploadImage = multer({
+        storage: multer.memoryStorage(),
+        limits: { fileSize: 8 * 1024 * 1024, files: 1, fields: 24, fieldSize: 64 * 1024 },
+    }).single('image');
 
     let ratesCache = { at: 0, value: null };
     async function rates() {
@@ -89,8 +95,11 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
     const lines = (v) => String(v || '').split('\n').map((s) => s.trim()).filter(Boolean);
 
     /** A POST handler: viewer + anti-forgery token, VipError → redirect with the message. */
-    function post(path, handler, { backTo } = {}) {
-        router.post(path, body, async (req, res, next) => {
+    function post(path, handler, { backTo, upload = null } = {}) {
+        // A route with an upload takes the multipart parser first and the urlencoded one after it, so a
+        // form without a file still works.
+        const parser = upload ? [upload, body] : [body];
+        router.post(path, ...parser, async (req, res, next) => {
             const to = typeof backTo === 'function' ? backTo(req) : (backTo || req.path);
             if (!req.viewer) return res.redirect(303, `/auth/login?next=${encodeURIComponent(to)}`);
             if (!forms.verify(req.viewer.subject, req.body && req.body._csrf)) return back(res, to, 'error', 'That form expired. Please try again.');
@@ -258,12 +267,27 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
                     members = (await Promise.all((await entitlements.projectedMembers(creator.subject)).map(async (pr) => ({ member: { type: 'user', id: pr.member_subject }, current_period_end: pr.expires_at, cancel_at_period_end: !!pr.cancel_at_period_end, membership: await memberships.present(byMember.get(pr.member_subject)) }))));
                 }
             }
+            // The creator's own posts (with their text) and, for staff, every creator's posts to moderate.
+            const postRows = isNetwork ? [] : await domain.posts.rows({ creatorId: creator.id, includeHidden: true });
+            const postTiers = isNetwork ? [] : await domain.posts.offeredTiers(creator.id);
+            const moderation = isStaff(req.viewer) ? await Promise.all((await domain.posts.recent({ limit: 50 })).map(async (row) => {
+                const owner = await creators.byId(row.creator_id);
+                return {
+                    id: row.id, title: row.title, status: row.status, tiers: domain.posts.tiersOf(row),
+                    creator: owner ? (owner.display_name || owner.username || owner.subject) : 'a creator',
+                };
+            })) : [];
             send(res, 200, {
                 title: isNetwork ? 'Network plans' : 'Dashboard', active: 'dashboard', robots: 'noindex,nofollow', canonicalPath: '/dashboard', viewer: req.viewer,
                 body: pages.dashboard({
                     viewer: req.viewer, creator, isNetwork, isStaff: isStaff(req.viewer), plans: planRows, allPerks, ownPerks, members, membersSource, priceTable,
                     rules: isNetwork ? [] : await Promise.all((await policies.list(creator.id)).map(policies.present)), token: forms.token(req.viewer.subject), query: req.query, base: isNetwork ? '/dashboard/network' : '/dashboard',
                     embeds: !isNetwork && creator.username ? domain.cards.urls(creator) : null,
+                    posts: postRows.map((row) => ({
+                        id: row.id, title: row.title, tiers: domain.posts.tiersOf(row), status: row.status, published_at: row.published_at,
+                        image: row.image_id ? { id: row.image_id, url: row.image_url } : null, body_html: row.body_html,
+                    })),
+                    postTiers, moderation,
                 }),
             });
         } catch (e) { next(e); }
@@ -342,8 +366,51 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
                 await policies.disable(rule.id);
                 back(res, to, 'ok', 'Rule removed.');
             }, opts);
+            // A post for the members of one or more of the creator's tiers (an optional image goes to Media).
+            post(`${base}/posts`, async (req, res, to) => {
+                const c = await dashCreator(req);
+                const tiers = list(req.body.tiers).map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 10);
+                let image = null;
+                if (req.file && req.file.buffer && req.file.buffer.length) {
+                    try {
+                        image = await domain.media.uploadImage({ buffer: req.file.buffer, mime: req.file.mimetype, filename: req.file.originalname, owner: c.subject });
+                    } catch (e) {
+                        throw new VipError(503, 'vip.image_failed', `The image could not be stored: ${e.detail || e.message}`);
+                    }
+                }
+                await domain.posts.create({ creatorId: c.id, title: req.body.title, body: req.body.body, tiers, image, actor: req.viewer.subject, traceparent: req.ov.traceparent });
+                back(res, to, 'ok', 'Post published.');
+            }, { ...opts, upload: uploadImage });
+            post(`${base}/posts/:id/hide`, async (req, res, to) => {
+                const row = await domain.posts.byId(req.params.id);
+                await own(req, row);
+                await domain.posts.hide(row.id, { actor: req.viewer.subject });
+                back(res, to, 'ok', 'Post hidden. Nobody reads it now.');
+            }, opts);
+            post(`${base}/posts/:id/unhide`, async (req, res, to) => {
+                const row = await domain.posts.byId(req.params.id);
+                await own(req, row);
+                await domain.posts.unhide(row.id, { actor: req.viewer.subject });
+                back(res, to, 'ok', 'Post shown again.');
+            }, opts);
         }
     }
+
+    // Staff moderation: hide or show any creator's post (the way staff manage network plans).
+    post('/dashboard/moderation/posts/:id/hide', async (req, res, to) => {
+        if (!isStaff(req.viewer)) throw new VipError(403, 'vip.not_staff', 'only staff moderate posts');
+        const row = await domain.posts.byId(req.params.id);
+        if (!row) throw new VipError(404, 'vip.post_not_found', 'no such post');
+        await domain.posts.hide(row.id, { actor: req.viewer.subject, reason: 'hidden by staff' });
+        back(res, to, 'ok', 'Post hidden.');
+    }, { backTo: '/dashboard' });
+    post('/dashboard/moderation/posts/:id/unhide', async (req, res, to) => {
+        if (!isStaff(req.viewer)) throw new VipError(403, 'vip.not_staff', 'only staff moderate posts');
+        const row = await domain.posts.byId(req.params.id);
+        if (!row) throw new VipError(404, 'vip.post_not_found', 'no such post');
+        await domain.posts.unhide(row.id, { actor: req.viewer.subject, staff: true });
+        back(res, to, 'ok', 'Post shown again.');
+    }, { backTo: '/dashboard' });
 
     // ── Creator pages ────────────────────────────────────────
     router.get('/:username', async (req, res, next) => {
@@ -356,11 +423,29 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
             const isOwner = !!(req.viewer && req.viewer.subject === c.subject);
             const member = req.viewer && !isOwner ? await entitlements.check(req.viewer.subject, c.subject, { mode: 'auto' }) : null;
             const name = c.display_name || c.username;
+            // The posts: the title and the tier are public, the text only for a member of that tier.
+            const posts = [];
+            for (const row of await domain.posts.rows({ creatorId: c.id })) {
+                const tiers = domain.posts.tiersOf(row);
+                const target = list.filter((p) => p.purchasable && p.tier && tiers.includes(p.tier)).sort((a, b) => a.tier - b.tier)[0];
+                const access = isOwner
+                    ? { unlocked: true }
+                    : await domain.posts.access({
+                        post: row, memberSubject: req.viewer ? req.viewer.subject : null, creatorSubject: c.subject, creatorId: c.id,
+                        entitlement: member, traceparent: req.ov.traceparent,
+                    });
+                posts.push({
+                    id: row.id, title: row.title, tiers, published_at: row.published_at,
+                    image: row.image_id ? { id: row.image_id, url: row.image_url } : null,
+                    unlocked: !!access.unlocked, body_html: access.unlocked ? row.body_html : null,
+                    join_url: target ? `/${encodeURIComponent(c.username)}#plan-${encodeURIComponent(target.slug)}` : `/${encodeURIComponent(c.username)}`,
+                });
+            }
             send(res, 200, {
                 title: `${name} memberships`, active: 'creator', canonicalPath: `/${c.username}`, viewer: req.viewer,
                 description: c.bio || `Membership plans from ${name} on OpenVibe.`,
                 robots: list.length ? 'index,follow' : 'noindex,follow',
-                body: pages.creatorPage({ creator: creators.present(c), plans: list, viewer: req.viewer, member, rates: list.some((p) => p.purchasable) ? await rates() : null, providers: config.billing.providers, token: req.viewer ? forms.token(req.viewer.subject) : '', query: req.query, isOwner }),
+                body: pages.creatorPage({ creator: creators.present(c), plans: list, viewer: req.viewer, member, rates: list.some((p) => p.purchasable) ? await rates() : null, providers: config.billing.providers, token: req.viewer ? forms.token(req.viewer.subject) : '', query: req.query, isOwner, posts }),
             });
         } catch (e) { next(e); }
     });

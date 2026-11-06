@@ -59,6 +59,8 @@ const envelope = (id, type, payload) => ({ event_id: id, event_type: type, sourc
             ON CONFLICT (member_subject, creator_id) DO NOTHING`, [member.subject, creatorId, new Date().toISOString()]);
         assert.strictEqual(await count('SELECT count(*) FROM vip_membership_periods WHERE member_subject = $1', [member.subject]), 1);
         assert.strictEqual(await count('SELECT count(*) FROM vip_entitlement_projection WHERE member_subject = $1', [member.subject]), 1);
+        const post = await t.call('POST', '/api/v1/creators/' + creator.subject + '/posts', { user: creator, body: { title: 'Crew notes', body: 'The set list for Friday.', tiers: [1] } });
+        assert.strictEqual(post.status, 201, JSON.stringify(post.json));
     });
 
     test('the member\'s export carries their memberships, entitlements and paid periods, and nobody else\'s', async () => {
@@ -94,6 +96,8 @@ const envelope = (id, type, payload) => ({ event_id: id, event_type: type, sourc
         const row = await db.maybe('SELECT * FROM vip_creators WHERE id = $1', [creatorId]);
         assert.deepStrictEqual([row.status, row.username, row.display_name, row.bio], ['suspended', null, null, null]);
         assert.strictEqual(await count('SELECT count(*) FROM vip_plans WHERE creator_id = $1 AND created_by IS NULL', [creatorId]), 1);
+        assert.strictEqual(await count('SELECT count(*) FROM vip_member_posts WHERE creator_id = $1 AND created_by IS NULL', [creatorId]), 1, 'the creator\'s posts lose their author');
+        assert.ok(await count('SELECT count(*) FROM vip_member_posts WHERE creator_id = $1', [creatorId]) >= 1, 'the posts stay with the creator row');
         assert.ok(await count('SELECT count(*) FROM vip_plan_versions WHERE plan_id = $1', [plan.id]) >= 1, 'the terms members joined under stay');
         assert.strictEqual(await count('SELECT count(*) FROM vip_membership_periods WHERE member_subject = $1', [other.subject]), 1);
         const conf = stub.calls.filter((c) => c.url === '/internal/account-deletions/del_01JZ0000000000000000000DE2/confirmations');

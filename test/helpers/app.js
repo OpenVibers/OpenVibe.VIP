@@ -83,6 +83,27 @@ async function boot(opts = {}) {
         const res = await fetch(base + p, { method, headers, body: bodyStr, redirect: 'manual' });
         return { status: res.status, location: res.headers.get('location'), text: await res.text() };
     }
+    /**
+     * An SSR request with a multipart form (fields and at most one file), the way the post composer
+     * sends an image. file: { field, filename, contentType, data }.
+     */
+    async function pageMultipart(p, { user, fields = {}, file = null } = {}) {
+        const boundary = '----vip' + Math.random().toString(16).slice(2);
+        const parts = [];
+        for (const [k, v] of Object.entries(fields)) {
+            parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`));
+        }
+        if (file) {
+            parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${file.field}"; filename="${file.filename}"\r\nContent-Type: ${file.contentType}\r\n\r\n`));
+            parts.push(Buffer.isBuffer(file.data) ? file.data : Buffer.from(String(file.data)));
+            parts.push(Buffer.from('\r\n'));
+        }
+        parts.push(Buffer.from(`--${boundary}--\r\n`));
+        const headers = { 'Content-Type': `multipart/form-data; boundary=${boundary}` };
+        if (user) headers.Cookie = `ov_token=${network.signUser(user)}`;
+        const res = await fetch(base + p, { method: 'POST', headers, body: Buffer.concat(parts), redirect: 'manual' });
+        return { status: res.status, location: res.headers.get('location'), text: await res.text() };
+    }
     const csrf = (html) => { const m = /name="_csrf" value="([^"]+)"/.exec(html); return m ? m[1] : null; };
 
     const outboxEvents = async (type) => (await domain.db.prepare('SELECT envelope FROM event_outbox ORDER BY id').all()).map((r) => (typeof r.envelope === 'string' ? JSON.parse(r.envelope) : r.envelope)).filter((e) => !type || e.event_type === type);
@@ -95,7 +116,7 @@ async function boot(opts = {}) {
         if (!opts.testdb) await testdb.close();   // a caller that handed its own database closes it
     }
 
-    return { app, base, config, domain, network, billing, clock, logs, call, deliver, deliverAll, page, csrf, outboxEvents, close, testdb, EVENTS_SECRET };
+    return { app, base, config, domain, network, billing, clock, logs, call, deliver, deliverAll, page, pageMultipart, csrf, outboxEvents, close, testdb, EVENTS_SECRET };
 }
 
 /** Tiny test harness: sequential async tests, a summary, exit code. */

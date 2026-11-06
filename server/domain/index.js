@@ -11,8 +11,9 @@ const { createPolicies } = require('./policies');
 const { createCheckout } = require('./checkout');
 const { createCards } = require('./cards');
 const { createPrices } = require('./prices');
+const { createPosts } = require('./posts');
 
-function createDomain({ db, config, outbox, billing, now = () => Date.now(), log = console, indexnow = null }) {
+function createDomain({ db, config, outbox, billing, now = () => Date.now(), log = console, indexnow = null, media = null }) {
     const creators = createCreators({ db, now });
     const perks = createPerks({ db, now });
     const plans = createPlans({ db, now, outbox, creators, perks, baseUrl: config.baseUrl, indexnow });
@@ -23,8 +24,10 @@ function createDomain({ db, config, outbox, billing, now = () => Date.now(), log
     const checkout = createCheckout({ db, now, config, billing, creators, plans, entitlements, periods });
     const prices = createPrices({ config, billing, now });
     const cards = createCards({ db, config, creators, plans, perks, billing, prices, now, log });
+    // The posts a creator writes for the members of their tiers (readers are decided by the entitlement check).
+    const posts = createPosts({ db, now, creators, plans, memberships, entitlements });
     const tx = async (fn) => await db.tx(fn);
-    return { db, config, now, tx, outbox, billing, creators, perks, plans, memberships, periods, entitlements, policies, checkout, cards, prices };
+    return { db, config, now, tx, outbox, billing, creators, perks, plans, memberships, periods, entitlements, policies, checkout, cards, prices, posts, media };
 }
 
 module.exports = { createDomain };
