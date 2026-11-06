@@ -138,7 +138,7 @@ async function createApp(opts = {}) {
     // opts.limitsNow: the limiter's clock (tests).
     const limits = createActorLimits({ config, now: opts.limitsNow || now, registry: metrics.registry, log, valkey });
     app.use('/api/v1', express.json({ limit: '64kb' }), (req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); }, apiAuth.middleware, v1Router({ domain, apiAuth, limits }));
-    app.use('/auth', createSessionRoutes(config, userAuth, { fetchImpl }));
+    app.use('/auth', createSessionRoutes(config, userAuth, { fetchImpl, log }));
     { const legal = require('openvibe-shared/legal'); app.get(legal.PATHS, legal.handler({ id: 'vip', service: 'vip', host: 'openvibe.vip', name: 'OpenVibe.VIP', profile: 'ugc' })); }
 
     // This site's own pinned copy of the OpenVibe Frame's browser files (openvibe-shared/serve).
