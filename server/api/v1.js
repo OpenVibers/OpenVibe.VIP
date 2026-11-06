@@ -32,8 +32,11 @@ const CAP = {
     postModerate: 'vip.post.moderate',
 };
 
-function v1Router({ domain, apiAuth, limits }) {
+function v1Router({ domain, apiAuth, limits, assertionFor }) {
     const r = express.Router();
+    // The person's own subject assertion (ADR-003, the 2026-11-06 amendment; plan H1). Without the
+    // minter (an old caller) no assertion is minted and every call travels the old way.
+    const mint = typeof assertionFor === 'function' ? assertionFor : async () => null;
     const { creators, plans, perks, memberships, entitlements, policies, checkout, billing } = domain;
 
     // Per-actor limits (api/actor-limits.js), after the credential and before any work: reads take the
@@ -235,6 +238,9 @@ function v1Router({ domain, apiAuth, limits }) {
             member, planId: b.plan_id, provider: b.provider,
             successUrl: returnUrl(req, b.success_url, 'success_url'), cancelUrl: returnUrl(req, b.cancel_url, 'cancel_url'),
             autoRenew: b.auto_renew === undefined ? true : bool(b.auto_renew), traceparent: trace(req),
+            // The person's own subject assertion (ADR-003, the 2026-11-06 amendment; plan H1): Billing
+            // checks it against the member the money is for.
+            assertion: await mint(req.headers, member),
         });
         res.status(201).json(out);
     }));
@@ -246,7 +252,7 @@ function v1Router({ domain, apiAuth, limits }) {
         const list = [];
         for (const m of await memberships.forMember(member)) {
             const c = await creators.byId(m.creator_id);
-            const ent = c && c.subject ? await entitlements.check(member, c.subject, { mode, traceparent: trace(req) }) : null;
+            const ent = c && c.subject ? await entitlements.check(member, c.subject, { mode, traceparent: trace(req), assertion: await mint(req.headers, member) }) : null;
             list.push({ ...await memberships.present(m), creator: creators.present(c), entitlement: ent, preferences: await memberships.preferences(member, m.creator_id) });
         }
         res.json({ member: { type: 'user', id: member }, memberships: list });
@@ -260,7 +266,7 @@ function v1Router({ domain, apiAuth, limits }) {
     r.post('/memberships/:creator/cancel', limits('vip.membership.cancel', { minute: 5, hour: 30 }), wrap(async (req, res) => {
         if (req.principal.kind !== 'user') fail(403, 'vip.member_only', 'only the member can cancel their membership');
         const c = await creatorParam(req);
-        res.json(await checkout.cancel({ member: req.principal.subject, creatorId: c.id, traceparent: trace(req) }));
+        res.json(await checkout.cancel({ member: req.principal.subject, creatorId: c.id, traceparent: trace(req), assertion: await mint(req.headers, req.principal.subject) }));
     }));
     r.put('/memberships/:creator/preferences', edit, wrap(async (req, res) => {
         if (req.principal.kind !== 'user') fail(403, 'vip.member_only', 'only the member sets their preferences');
@@ -282,7 +288,7 @@ function v1Router({ domain, apiAuth, limits }) {
             creatorSubject = c.subject;
         }
         const mode = ['projection', 'authoritative'].includes(src.mode) ? src.mode : 'auto';
-        const out = await entitlements.check(member, creatorSubject, { mode, traceparent: trace(req) });
+        const out = await entitlements.check(member, creatorSubject, { mode, traceparent: trace(req), assertion: await mint(req.headers, member) });
         // `product`: what this membership means in one product — the perks of the member's plan version
         // with that product's bindings (a chat badge, a gated post, …) and the member's badge preference.
         if (src.product != null && src.product !== '') {

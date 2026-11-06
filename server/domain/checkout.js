@@ -33,7 +33,7 @@ function billingProblem(err) {
 function createCheckout({ db, now, config, billing, creators, plans, entitlements, periods }) {
     const byId = async (id) => await db.prepare('SELECT * FROM vip_checkouts WHERE id = ?').get(id) || null;
 
-    async function start({ member, planId, provider, successUrl, cancelUrl, autoRenew = true, traceparent }) {
+    async function start({ member, planId, provider, successUrl, cancelUrl, autoRenew = true, traceparent, assertion }) {
         const plan = await plans.byId(String(planId || ''));
         if (!plan || plan.status !== 'published') fail(404, 'vip.plan_not_found', 'no published plan with that id');
         if (!plan.billing_kind) fail(409, 'vip.checkout.unavailable', 'this plan is not sold through Billing yet');
@@ -45,7 +45,7 @@ function createCheckout({ db, now, config, billing, creators, plans, entitlement
 
         // Sensitive: ask Billing, not the projection. An active member renews through Billing, not here.
         let current;
-        try { current = await entitlements.authoritative(member, creator.subject, { traceparent }); } catch (e) { billingProblem(e); }
+        try { current = await entitlements.authoritative(member, creator.subject, { traceparent, assertion }); } catch (e) { billingProblem(e); }
         if (current && current.active && current.expires_at && Date.parse(current.expires_at) > now()) {
             fail(409, 'vip.already_member', 'you are already a member; your membership renews through Billing');
         }
@@ -62,7 +62,7 @@ function createCheckout({ db, now, config, billing, creators, plans, entitlement
         if (p === 'credit') {
             let out;
             try {
-                out = await billing.subscribeWithCredit({ subscriber: member, creator: creator.subject, tier: Number(plan.billing_tier) || 1, autoRenew, key: `vip:checkout:${id}`, traceparent });
+                out = await billing.subscribeWithCredit({ subscriber: member, creator: creator.subject, tier: Number(plan.billing_tier) || 1, autoRenew, key: `vip:checkout:${id}`, traceparent, assertion });
             } catch (e) { await mark({ status: 'failed', error: String(e.code || e.message).slice(0, 200) }); billingProblem(e); }
             const sub = out.subscription || {};
             const ent = out.entitlement || {};
@@ -91,7 +91,7 @@ function createCheckout({ db, now, config, billing, creators, plans, entitlement
                 provider: p, subject: member, creator: creator.subject, tier: Number(plan.billing_tier) || 1, autoRenew,
                 successUrl: successUrl || `${config.baseUrl}/me?joined=${encodeURIComponent(creator.username || '')}`,
                 cancelUrl: cancelUrl || `${config.baseUrl}/${encodeURIComponent(creator.username || '')}`,
-                key: `vip:checkout:${id}`, traceparent,
+                key: `vip:checkout:${id}`, traceparent, assertion,
             });
         } catch (e) { await mark({ status: 'failed', error: String(e.code || e.message).slice(0, 200) }); billingProblem(e); }
         const intent = out.intent || {};
@@ -106,22 +106,22 @@ function createCheckout({ db, now, config, billing, creators, plans, entitlement
     }
 
     /** Cancel at period end, through Billing. Only the member themself. */
-    async function cancel({ member, creatorId, traceparent }) {
+    async function cancel({ member, creatorId, traceparent, assertion }) {
         const creator = await creators.byId(creatorId);
         if (!creator || !creator.subject) fail(404, 'vip.creator_not_found', `no creator ${creatorId}`);
         let row;
-        try { row = await entitlements.authoritative(member, creator.subject, { traceparent }); } catch (e) { billingProblem(e); }
+        try { row = await entitlements.authoritative(member, creator.subject, { traceparent, assertion }); } catch (e) { billingProblem(e); }
         if (!row || !row.active || !row.subscription_id) fail(404, 'vip.membership_not_found', 'there is no active membership to cancel');
         if (row.cancel_at_period_end) return { already: true, expires_at: row.expires_at };
         let sub;
         try {
-            const s = await billing.getSubscription(row.subscription_id);
+            const s = await billing.getSubscription(row.subscription_id, { assertion });
             sub = s.subscription;
         } catch (e) { billingProblem(e); }
         if (!sub || !sub.subscriber || sub.subscriber.id !== member) fail(403, 'vip.not_yours', 'that membership is not yours');
         let out;
         try {
-            out = await billing.cancelSubscription({ id: sub.id, key: `vip:cancel:${sub.id}:${sub.current_period_end || 'open'}`, traceparent });
+            out = await billing.cancelSubscription({ id: sub.id, key: `vip:cancel:${sub.id}:${sub.current_period_end || 'open'}`, traceparent, assertion });
         } catch (e) { billingProblem(e); }
         const s = (out && out.subscription) || {};
         await entitlements.applyCanceled({

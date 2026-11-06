@@ -140,7 +140,9 @@ async function createApp(opts = {}) {
     // Per-actor limits on /api/v1 (api/actor-limits.js), counted once apiAuth resolved the caller.
     // opts.limitsNow: the limiter's clock (tests).
     const limits = createActorLimits({ config, now: opts.limitsNow || now, registry: metrics.registry, log, valkey });
-    app.use('/api/v1', express.json({ limit: '64kb' }), (req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); }, apiAuth.middleware, v1Router({ domain, apiAuth, limits }));
+    // The person's own subject assertion on the money routes (ADR-003, the 2026-11-06 amendment; plan H1).
+    const assertionFor = require('./subject-assertion').createSubjectAssertionMinter(config);
+    app.use('/api/v1', express.json({ limit: '64kb' }), (req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); }, apiAuth.middleware, v1Router({ domain, apiAuth, limits, assertionFor }));
     app.use('/auth', createSessionRoutes(config, userAuth, { fetchImpl, log }));
     { const legal = require('openvibe-shared/legal'); app.get(legal.PATHS, legal.handler({ id: 'vip', service: 'vip', host: 'openvibe.vip', name: 'OpenVibe.VIP', profile: 'ugc' })); }
 

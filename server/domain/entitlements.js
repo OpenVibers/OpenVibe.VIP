@@ -152,8 +152,8 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
     };
 
     /** Ask Billing and project the answer. Throws BillingCallError when Billing cannot answer. */
-    async function authoritative(member, creator, { traceparent } = {}) {
-        const e = await billing.entitlement(member, creator);
+    async function authoritative(member, creator, { traceparent, assertion } = {}) {
+        const e = await billing.entitlement(member, creator, { assertion });
         const sub = e && e.subscription;
         const out = await apply({
             member, creator, active: !!(e && e.active), expiresAt: (e && e.expires_at) || null,
@@ -167,7 +167,7 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
      * check(member, creator, { mode: 'auto' | 'projection' | 'authoritative' }) → answer.
      * `active` is true only for status 'active'; 'unknown' never authorizes.
      */
-    async function check(member, creator, { mode = 'auto', traceparent } = {}) {
+    async function check(member, creator, { mode = 'auto', traceparent, assertion } = {}) {
         if (member === creator) return { ...unknown(member, creator, 'self'), status: 'inactive', reason: 'a creator is not a member of their own plans' };
         const t = now();
         let row = await getRow(member, creator);
@@ -181,7 +181,7 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
         }
         if (mode === 'auto' && fresh) return await answer(row, 'projection', { membership: await membershipOf(member, creator) });
         try {
-            row = await authoritative(member, creator, { traceparent });
+            row = await authoritative(member, creator, { traceparent, assertion });
             return await answer(row, 'billing', { membership: await membershipOf(member, creator) });
         } catch (err) {
             log.warn(`[VIP] authoritative entitlement check failed (${member} → ${creator}): ${err.message}`);
