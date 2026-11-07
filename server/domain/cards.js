@@ -81,7 +81,7 @@ function createCards({ db, config, creators, plans, perks, billing, prices = nul
     const urls = (c) => {
         const u = encodeURIComponent(c.username);
         return {
-            page: `${config.baseUrl}/${u}`, badge: `${config.baseUrl}/embed/${u}/badge.svg`,
+            page: `${config.baseUrl}/@${u}`, badge: `${config.baseUrl}/embed/${u}/badge.svg`,
             widget: `${config.baseUrl}/embed/${u}/widget`, card: `${config.baseUrl}/embed/${u}/card.json`,
         };
     };

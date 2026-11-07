@@ -68,7 +68,7 @@ test('a non-member and a signed-out visitor see the title, the tier and a way to
         await publishTiers(t, creator, [1]);
         await writePost(t, creator, { title: 'Studio notes', body: 'The secret of the mix: 60% patience.', tiers: ['1'] });
 
-        const out = await t.page('/lena');
+        const out = await t.page('/@lena');
         assert.strictEqual(out.status, 200);
         assert.ok(out.text.includes('Studio notes'), 'the title is public');
         assert.ok(out.text.includes('Tier 1'), 'the tier it needs is shown');
@@ -104,7 +104,7 @@ test('a member of the tier reads the text, on the page and through the API', asy
         const paid = await t.billing.pay(member.subject, creator.subject, { tier: 1 });
         await t.deliverAll(paid.events);
 
-        const out = await t.page('/lena', { user: member });
+        const out = await t.page('/@lena', { user: member });
         assert.ok(out.text.includes('Studio notes'));
         assert.ok(out.text.includes('60% patience'), 'a member reads the text');
 
@@ -129,7 +129,7 @@ test('a member of another tier does not read the text', async () => {
         const paid = await t.billing.pay(member.subject, creator.subject, { tier: 1 });
         await t.deliverAll(paid.events);
 
-        const out = await t.page('/lena', { user: member });
+        const out = await t.page('/@lena', { user: member });
         assert.ok(out.text.includes('Backstage'), 'the title is public');
         assert.ok(!out.text.includes('Only for the second row.'), 'the text is not');
 
@@ -148,7 +148,7 @@ test('the creator reads their own post, on the page and on the dashboard', async
         await publishTiers(t, creator, [1]);
         await writePost(t, creator, { title: 'Studio notes', body: 'The secret of the mix: 60% patience.', tiers: ['1'] });
 
-        const page = await t.page('/lena', { user: creator });
+        const page = await t.page('/@lena', { user: creator });
         assert.ok(page.text.includes('60% patience'), 'the creator reads their own text');
         const dash = await t.page('/dashboard', { user: creator });
         assert.ok(dash.text.includes('Studio notes'), 'the dashboard lists the post');
@@ -174,7 +174,7 @@ test('staff hide a post: it is gone from the page and from the API, and the crea
         assert.strictEqual(hidden.status, 200);
         assert.strictEqual(hidden.json.post.status, 'hidden');
 
-        const page = await t.page('/lena', { user: member });
+        const page = await t.page('/@lena', { user: member });
         assert.ok(!page.text.includes('Studio notes'), 'a hidden post is not listed');
         assert.ok(!page.text.includes('60% patience'));
         const body = await t.call('GET', '/api/v1/creators/' + creator.subject + '/posts/' + id + '/body', { user: member });
@@ -190,7 +190,7 @@ test('staff hide a post: it is gone from the page and from the API, and the crea
         const again = await t.call('POST', '/api/v1/posts/' + id + '/unhide', { user: staff });
         assert.strictEqual(again.status, 200);
         assert.strictEqual(again.json.post.status, 'published');
-        const shown = await t.page('/lena', { user: member });
+        const shown = await t.page('/@lena', { user: member });
         assert.ok(shown.text.includes('60% patience'), 'the post is readable again');
     } finally { await t.close(); }
 });
@@ -217,7 +217,7 @@ test('an image on a post goes to Media and is shown to the members of the tier',
 
         const paid = await t.billing.pay(member.subject, creator.subject, { tier: 1 });
         await t.deliverAll(paid.events);
-        const page = await t.page('/lena', { user: member });
+        const page = await t.page('/@lena', { user: member });
         assert.ok(page.text.includes(`https://media.test/o/${object.id}`), 'the image is on the page');
         assert.ok(page.text.includes('The sleeve.'));
     } finally { await t.close(); await media.close(); }
@@ -229,7 +229,7 @@ test('the Markdown a creator writes is rendered safely', async () => {
         const creator = t.network.newUser('lena');
         await publishTiers(t, creator, [1]);
         await writePost(t, creator, { title: 'Markup', body: '**bold** <script>alert(1)</script>', tiers: ['1'] });
-        const out = await t.page('/lena', { user: creator });
+        const out = await t.page('/@lena', { user: creator });
         assert.ok(out.text.includes('<strong>bold</strong>'), 'the marks are rendered');
         assert.ok(!out.text.includes('<script>alert(1)</script>'), 'no markup is carried through');
     } finally { await t.close(); }
@@ -247,12 +247,12 @@ test('the renderer escapes everything but the marks, and the page shows a locked
     assert.ok(!renderMarkdown('[x](javascript:alert(1))').includes('<a '), 'and never becomes a link');
 
     // The page: a locked post shows its title, its tier and the way to join — and no text.
-    const locked = pages.postsSection([{ title: 'Studio notes', tiers: [1], published_at: '2026-01-02T00:00:00.000Z', image: null, unlocked: false, body_html: null, join_url: '/lena#plan-front-row' }]);
+    const locked = pages.postsSection([{ title: 'Studio notes', tiers: [1], published_at: '2026-01-02T00:00:00.000Z', image: null, unlocked: false, body_html: null, join_url: '/@lena#plan-front-row' }]);
     assert.ok(locked.includes('Studio notes'));
     assert.ok(locked.includes('Tier 1'));
     assert.ok(locked.includes('Become a member'));
     assert.ok(!locked.includes('post-body'), 'a locked post carries no text');
-    const open = pages.postsSection([{ title: 'Studio notes', tiers: [1], published_at: '2026-01-02T00:00:00.000Z', image: null, unlocked: true, body_html: '<p>The mix.</p>', join_url: '/lena' }]);
+    const open = pages.postsSection([{ title: 'Studio notes', tiers: [1], published_at: '2026-01-02T00:00:00.000Z', image: null, unlocked: true, body_html: '<p>The mix.</p>', join_url: '/@lena' }]);
     assert.ok(open.includes('<p>The mix.</p>'), 'a member reads the text');
     // A locked post whose tier cannot be joined: the line, no button.
     const closed = pages.postsSection([{ title: 'Studio notes', tiers: [2], published_at: '2026-01-02T00:00:00.000Z', image: null, unlocked: false, body_html: null, join_url: null }]);
@@ -305,13 +305,13 @@ test('a locked post offers a way to join only when a tier that reads it can be j
         await writePost(t, creator, { title: 'Joinable', body: 'For the first row.', tiers: ['1'] });
         await writePost(t, creator, { title: 'Not joinable', body: 'For the second row.', tiers: ['2'] });
 
-        const out = await t.page('/lena', { user: stranger });
+        const out = await t.page('/@lena', { user: stranger });
         // The tier-1 post: the button, and it points at the plan that opens it.
         assert.strictEqual((out.text.match(/Become a member/g) || []).length, 1, 'only the joinable post offers a way in');
-        assert.ok(out.text.includes('/lena#plan-tier-1-plan'), 'the link points at the plan that reads it');
+        assert.ok(out.text.includes('/@lena#plan-tier-1-plan'), 'the link points at the plan that reads it');
         // The tier-2 post: no button, and the line says why.
         assert.ok(out.text.includes('This post is for the members of Tier 2, which is not open to join yet.'));
-        assert.ok(!out.text.includes('/lena#plan-tier-2-plan'), 'no link to a plan that cannot be joined');
+        assert.ok(!out.text.includes('/@lena#plan-tier-2-plan'), 'no link to a plan that cannot be joined');
         assert.ok(!out.text.includes('For the first row.'), 'no text of a locked post, either way');
         assert.ok(!out.text.includes('For the second row.'));
         // The lock glyph before the line, drawn by the shared glyph set and hidden from a screen reader.

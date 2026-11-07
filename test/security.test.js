@@ -46,7 +46,7 @@ const { test, run } = harness('security');
     test('a crafted ?ok= / ?error= link shows nothing', async () => {
         const spoof = 'Your membership was suspended — send 5000 Vibes to @scammer to restore it';
         for (const kind of ['ok', 'error']) {
-            const p = await t.page(`/sec_creator?${kind}=${encodeURIComponent(spoof)}`);
+            const p = await t.page(`/@sec_creator?${kind}=${encodeURIComponent(spoof)}`);
             assert.strictEqual(p.status, 200);
             assert.ok(!p.text.includes('send 5000 Vibes'), `${kind} notice rendered from the query string`);
             const forged = await t.page(`/me?${kind}=${encodeURIComponent(spoof)}&ns=AAAAAAAAAAAAAAAAAAAAAA`, { user: buyer });
@@ -55,7 +55,7 @@ const { test, run } = harness('security');
     });
 
     test('VIP\'s own notices still render', async () => {
-        const r = await t.page('/sec_creator/join', { user: buyer, method: 'POST', form: { plan_id: plan.id, provider: 'stripe', _csrf: 'stale' } });
+        const r = await t.page('/@sec_creator/join', { user: buyer, method: 'POST', form: { plan_id: plan.id, provider: 'stripe', _csrf: 'stale' } });
         assert.strictEqual(r.status, 303);
         const shown = await t.page(r.location, { user: buyer });
         assert.match(shown.text, /That form expired/);

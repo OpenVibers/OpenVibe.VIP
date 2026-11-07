@@ -44,6 +44,9 @@ const pages = require('./web/pages');
 const VERSION = require('../package.json').version;
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
+// Names the site's own routes use; an old /<name> link for one of these is never a creator page.
+const RESERVED_CREATOR = new Set(['me', 'dashboard', 'auth', 'api', 'internal', 'css', 'js', 'terms', 'privacy', 'dmca', 'robots.txt', 'sitemap.xml', 'llms.txt', 'llms-full.txt', 'release.json', 'metrics', 'favicon.ico', 'embed']);
+
 async function createApp(opts = {}) {
     const config = opts.config || loadConfig();
     const log0 = opts.log || console;
@@ -160,6 +163,20 @@ async function createApp(opts = {}) {
         },
     }));
     const liveNow = opts.liveNow || require('./live-now').createLiveNow({ config, fetchImpl, log });
+    // Old root creator links (and their .md twins) move to /@name with one 301, before the agent layer, which
+    // would otherwise sign /name.md with the old path as its canonical. Reserved names and unknown creators
+    // fall through (404), and only GET/HEAD move.
+    app.use(async (req, res, next) => {
+        if (!['GET', 'HEAD'].includes(req.method)) return next();
+        const m = /^\/([^/@][^/]*)(\/plans\/[^/]+)?(\.md)?$/.exec(req.path);
+        if (!m) return next();
+        if (RESERVED_CREATOR.has(String(m[1]).toLowerCase())) return next();
+        let c;
+        try { c = await domain.creators.byUsername(m[1]); } catch { return next(); }
+        if (!c || c.status !== 'active') return next();
+        const q = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+        return res.redirect(301, `/@${encodeURIComponent(c.username)}${m[2] || ''}${m[3] || ''}${q}`);
+    });
     // The agent layer (openvibe-shared/agent-layer): /.well-known/agent.json and the Markdown twins of the
     // public pages (server/agent-pages.js). The pages keep their own routes — a signed-in viewer's member
     // state, join form and anti-forgery token are theirs — so only the manifest and twin requests reach

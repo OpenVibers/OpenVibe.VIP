@@ -95,10 +95,10 @@ function home({ creators, live = [], networkUrl = 'https://openvibe.network' }) 
 
     const liveSection = liveCreators.length ? `
 <section class="sc-sec" id="live" aria-labelledby="live-h"><h2 id="live-h">Live now</h2><p class="sc-lede">Creators with a membership who are streaming on OpenVibe.Live right now.</p>
-<ul class="vip-live">${liveCreators.map(({ c, s }) => `<li>${avatar(networkUrl, c.username, 48)}<div class="vip-live-main"><p class="vip-live-name"><b>${esc(c.display_name || c.username)}</b> <span class="vip-live-pill">Live</span></p>${s.title ? `<p class="vip-live-title">${esc(s.title)}</p>` : ''}<p class="muted small">${s.category ? `${esc(s.category)} · ` : ''}${plural(s.viewers, 'viewer', 'viewers')}</p><p class="vip-live-links"><a href="${esc(s.url)}" rel="noopener">Watch</a><a href="/${encodeURIComponent(c.username)}">See the plan</a></p></div></li>`).join('')}</ul></section>` : '';
+<ul class="vip-live">${liveCreators.map(({ c, s }) => `<li>${avatar(networkUrl, c.username, 48)}<div class="vip-live-main"><p class="vip-live-name"><b>${esc(c.display_name || c.username)}</b> <span class="vip-live-pill">Live</span></p>${s.title ? `<p class="vip-live-title">${esc(s.title)}</p>` : ''}<p class="muted small">${s.category ? `${esc(s.category)} · ` : ''}${plural(s.viewers, 'viewer', 'viewers')}</p><p class="vip-live-links"><a href="${esc(s.url)}" rel="noopener">Watch</a><a href="/@${encodeURIComponent(c.username)}">See the plan</a></p></div></li>`).join('')}</ul></section>` : '';
 
     const list = ordered.length
-        ? `<ul class="creator-list">${ordered.map((c) => `<li><a href="/${encodeURIComponent(c.username)}">${avatar(networkUrl, c.username, 40)}<span class="vip-creator-text"><b>${esc(c.display_name || c.username)}</b><span class="muted">@${esc(c.username)}</span></span>${onAir.has(c.username.toLowerCase()) ? '<span class="vip-live-pill">Live</span>' : ''}</a></li>`).join('')}</ul>`
+        ? `<ul class="creator-list">${ordered.map((c) => `<li><a href="/@${encodeURIComponent(c.username)}">${avatar(networkUrl, c.username, 40)}<span class="vip-creator-text"><b>${esc(c.display_name || c.username)}</b><span class="muted">@${esc(c.username)}</span></span>${onAir.has(c.username.toLowerCase()) ? '<span class="vip-live-pill">Live</span>' : ''}</a></li>`).join('')}</ul>`
         : '<p class="muted">No creator has published a plan here yet.</p>';
 
     const body = showcase.hero({
@@ -240,11 +240,11 @@ ${member.membership && member.membership.plan_version ? `<p class="muted">You jo
                 : member && member.status === 'active' ? ''
                     : !providers.length ? '<p class="muted">Joining through OpenVibe.Billing is not open yet.</p>'
                     : viewer
-                        ? `<form method="post" action="/${encodeURIComponent(creator.username)}/join" class="join">${csrf(token)}<input type="hidden" name="plan_id" value="${esc(p.id)}">
+                        ? `<form method="post" action="/@${encodeURIComponent(creator.username)}/join" class="join">${csrf(token)}<input type="hidden" name="plan_id" value="${esc(p.id)}">
 <label>Pay with <select name="provider">${providers.map((x) => `<option value="${esc(x)}">${esc(x === 'credit' ? 'your Vibes credit' : x === 'powerchat' ? 'PowerChat' : x)}</option>`).join('')}</select></label>
 <label class="check"><input type="checkbox" name="auto_renew" value="1" checked> Renew automatically</label>
 <button type="submit">Join ${esc(v.name)}</button></form>`
-                        : `<p><a class="button" href="/auth/login?next=${encodeURIComponent(`/${creator.username}`)}">Sign in to join</a></p>`;
+                        : `<p><a class="button" href="/auth/login?next=${encodeURIComponent(`/@${creator.username}`)}">Sign in to join</a></p>`;
         return `<article class="card plan" id="plan-${esc(p.slug)}">
 <h2>${esc(v.name)}${plans.filter((x) => x.billing_kind).length > 1 && p.tier ? ` <span class="pill">Tier ${esc(p.tier)}</span>` : ''}</h2>
 ${v.description ? `<p>${esc(v.description)}</p>` : ''}
@@ -252,7 +252,7 @@ ${benefitList(v.benefits)}
 ${v.perks.length ? `<h3>Perks</h3>${perkList(v.perks)}` : ''}
 ${p.purchasable ? priceLine(rates, p.price_cents) : ''}
 ${join}
-<p class="muted small">Version ${esc(v.version)} · published ${fmtDate(v.published_at)} · <a href="/${encodeURIComponent(creator.username)}/plans/${encodeURIComponent(p.slug)}">terms history</a></p>
+<p class="muted small">Version ${esc(v.version)} · published ${fmtDate(v.published_at)} · <a href="/@${encodeURIComponent(creator.username)}/plans/${encodeURIComponent(p.slug)}">terms history</a></p>
 </article>`;
     }).join('') : '<p class="muted">No plan is published yet.</p>';
     return `<section class="creator-head"><p class="eyebrow">Membership</p><h1>${esc(name)}</h1><p class="muted">@${esc(creator.username)}</p>
@@ -265,13 +265,13 @@ ${postsSection(posts)}`;
 
 /** Public terms history of one plan: every published version, unchanged. */
 function planHistory({ creator, plan, versions }) {
-    return `<section><p class="eyebrow"><a href="/${encodeURIComponent(creator.username)}">${esc(creator.display_name || creator.username)}</a></p>
+    return `<section><p class="eyebrow"><a href="/@${encodeURIComponent(creator.username)}">${esc(creator.display_name || creator.username)}</a></p>
 <h1>Terms history</h1>
 <p class="muted">Each edit of a plan is a new version. Members keep the version they joined under; earlier versions are never rewritten.</p>
 ${versions.map((v) => `<article class="card version"><h2>${esc(v.name)} <span class="muted">v${esc(v.version)}</span></h2>
 <p class="muted small">Published ${fmtDate(v.published_at)}${v.change_note ? ` · ${esc(v.change_note)}` : ''}</p>
 ${v.description ? `<p>${esc(v.description)}</p>` : ''}${benefitList(v.benefits)}${v.perks.length ? `<h3>Perks</h3>${perkList(v.perks)}` : ''}</article>`).join('')}
-<p><a href="/${encodeURIComponent(creator.username)}#plan-${esc(plan.slug)}">Back to the plan</a></p></section>`;
+<p><a href="/@${encodeURIComponent(creator.username)}#plan-${esc(plan.slug)}">Back to the plan</a></p></section>`;
 }
 
 /** The member's own status page. */
@@ -281,7 +281,7 @@ function memberPage({ viewer, rows, token, query }) {
 <p><a class="button" href="/auth/login?next=%2Fme">Sign in</a></p></section>`;
     }
     const body = rows.length ? rows.map(({ membership: m, creator: c, entitlement: e, preferences: pref }) => {
-        const who = c ? (c.username ? `<a href="/${encodeURIComponent(c.username)}">${esc(c.display_name || c.username)}</a>` : esc(c.display_name || 'a creator')) : 'a creator';
+        const who = c ? (c.username ? `<a href="/@${encodeURIComponent(c.username)}">${esc(c.display_name || c.username)}</a>` : esc(c.display_name || 'a creator')) : 'a creator';
         const state = !e ? '<span class="pill">unknown</span>'
             : e.status === 'active' ? `<span class="pill pill-on">active</span> ${e.cancel_at_period_end ? `ends ${fmtDate(e.expires_at)}` : `paid through ${fmtDate(e.expires_at)}`}`
                 : e.status === 'inactive' ? `<span class="pill">ended</span>${e.expires_at ? ` ${fmtDate(e.expires_at)}` : ''}`
@@ -360,7 +360,7 @@ function dashboard({ viewer, creator, isNetwork, isStaff, plans, allPerks, ownPe
 <p><a class="button" href="/auth/login?next=%2Fdashboard">Sign in</a></p></section>`;
     }
     const title = isNetwork ? 'Network plans' : 'Your membership plans';
-    const pageLink = !isNetwork && creator.username ? `<p class="muted">Your public page: <a href="/${encodeURIComponent(creator.username)}">openvibe.vip/${esc(creator.username)}</a></p>` : '';
+    const pageLink = !isNetwork && creator.username ? `<p class="muted">Your public page: <a href="/@${encodeURIComponent(creator.username)}">openvibe.vip/@${esc(creator.username)}</a></p>` : '';
     const planOptions = plans.filter((p) => p.status !== 'archived').map((p) => `<option value="${esc(p.id)}">${esc((p.current_version || p.draft_version || {}).name || p.slug)}</option>`).join('');
     return `<section><h1>${title}</h1>${isStaff ? `<p class="muted small">${isNetwork ? '<a href="/dashboard">Your own plans</a>' : '<a href="/dashboard?as=network">Network plans (staff)</a>'}</p>` : ''}${pageLink}${notice(query)}</section>
 ${isNetwork ? '' : `<section class="card"><h2>Profile</h2><form method="post" action="${base}/profile">${csrf(token)}

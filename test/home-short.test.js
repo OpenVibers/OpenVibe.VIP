@@ -21,7 +21,7 @@ assert.ok(html.includes('document.getElementById("questions-fold")'), 'the fold 
 assert.match(html, /What is a membership\?/);
 assert.ok(html.includes('id="questions"'), 'the questions keep their section');
 // Every creator stays in the page.
-for (const c of creators) assert.ok(html.includes(`href="/${c.username}"`), `${c.username} is on the page`);
+for (const c of creators) assert.ok(html.includes(`href="/@${c.username}"`), `${c.username} is on the page`);
 
 // The CSS guard: a fold is a 44 px target and the creators are one row on a phone.
 const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'vip.css'), 'utf8');

@@ -38,7 +38,7 @@ function createPlans({ db, now, outbox, creators, perks, baseUrl = '', indexnow 
             if (!indexnow || !indexnow.enabled || !baseUrl || !plan) return;
             const creator = await creators.byId(plan.creator_id);
             if (!creator || !creator.username) return;   // network plans have no public page
-            const page = `${baseUrl}/${encodeURIComponent(creator.username)}`;
+            const page = `${baseUrl}/@${encodeURIComponent(creator.username)}`;
             indexnow.pingSoon([page, `${page}/plans/${encodeURIComponent(plan.slug)}`, `${baseUrl}/sitemap.xml`]);
         } catch { /* a ping never fails a publish */ }
     }
