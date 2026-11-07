@@ -14,6 +14,7 @@
  * domain calls as the API and redirects back with a notice (?ok= / ?error=).
  */
 const crypto = require('crypto');
+const cache = require('openvibe-shared/cache-policy');
 const ovServe = require('openvibe-shared/serve');
 const frame = require('openvibe-shared/frame');
 const seo = require('openvibe-shared/seo');
@@ -62,6 +63,12 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
         // responses do; a page rendered for a signed-in person (noindex) has no twin and no header.
         if (o && o.canonicalPath && !String(o.robots || 'index,follow').includes('noindex')) {
             res.set('Link', require('openvibe-shared/agent-layer').linkHeaderTags(layout.abs(o.canonicalPath), `${String(config.baseUrl).replace(/\/+$/, '')}/llms.txt`).header);
+        }
+        // The same page for every signed-out visitor: a minute of reuse, then a stale copy while the
+        // new one is fetched. A page rendered for a signed-in person names them, so it stays private.
+        if (!res.get('Cache-Control')) {
+            res.vary('Cookie');
+            res.set('Cache-Control', cache.htmlHeaders(o && o.viewer ? { private: true } : { maxAge: 60 }));
         }
         return res.status(status).type('html').send(layout.page(o));
     };
