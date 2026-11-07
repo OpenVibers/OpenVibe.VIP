@@ -25,7 +25,7 @@ The nine authority tables (VIP is their only writer):
 
 | Table | Holds |
 |---|---|
-| `vip_creators` | a creator (a Network `usr_` subject, with a cached handle for `/:username`) or the network itself |
+| `vip_creators` | a creator (a Network `usr_` subject, with a cached handle for `/@username`; the old `/:username` 301s there) or the network itself |
 | `vip_plans` | a plan: status (draft/published/archived), the Billing product it is sold as, its current version |
 | `vip_plan_versions` | **immutable** plan terms, one row per edit (database triggers refuse UPDATE/DELETE except the one-time publish stamp) |
 | `vip_perks` | perk definitions (creator or network scope): badge, emote, gated content, room, role, other |
@@ -364,9 +364,9 @@ memberships* card gives the creator the badge and widget HTML and the card URL.
 
 ## Pages (server-rendered, useful without JavaScript, OpenVibe Frame)
 
-`/` directory of creators with published plans · `/:username` a creator's plans (terms, perks,
+`/` directory of creators with published plans · `/@username` a creator's plans (terms, perks,
 Billing's price and period from `GET /api/v1/rates`, join form) and their members-only posts (the
-title and the tier are public, the text only for a member of that tier) · `/:username/plans/:slug` public terms
+title and the tier are public, the text only for a member of that tier) · `/@username/plans/:slug` public terms
 history · `/me` your memberships, the version you joined under, cancel, badge preference ·
 `/dashboard` plans, versions, perks and bindings, members, members-only resources, the members-only
 posts (write, hide) and, for staff, the moderation list, the badge and

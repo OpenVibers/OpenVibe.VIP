@@ -48,7 +48,7 @@ const { test, run } = harness('tiers');
     });
 
     test('the creator page and the card show each tier and its price', async () => {
-        const page = await t.page(`/${creator.username}`);
+        const page = await t.page(`/@${creator.username}`);
         assert.match(page.text, /Supporter <span class="pill">Tier 1<\/span>/);
         assert.match(page.text, /<b>\$3\.00<\/b> every/);
         assert.match(page.text, /<b>\$15\.00<\/b> every/);
@@ -85,7 +85,7 @@ const { test, run } = harness('tiers');
     test('a tier with no price cannot be joined, and says so', async () => {
         const three = await t.call('POST', '/api/v1/plans', { user: creator, body: { name: 'Patron', tier: 3, publish: true } });
         assert.strictEqual(three.status, 201, three.text);
-        const page = await t.page(`/${creator.username}`);
+        const page = await t.page(`/@${creator.username}`);
         assert.match(page.text, /This plan has no price yet, so it cannot be joined\./);
         const co = await t.call('POST', '/api/v1/checkout', { user: t.network.newUser('early'), body: { plan_id: three.json.plan.id, provider: 'credit' } });
         assert.strictEqual(co.status, 409);

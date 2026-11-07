@@ -25,7 +25,7 @@ assert.match(html, /12 viewers/);
 assert.match(html, /href="https:\/\/openvibe\.live\/@cyd" rel="noopener">Watch/);
 assert.ok(!html.includes('No plan here'), 'a channel without a plan here is not on the home');
 const grid = html.slice(html.indexOf('id="creators"'));
-assert.ok(grid.indexOf('href="/Cyd"') < grid.indexOf('href="/alma"'), 'live creators come first in the grid');
+assert.ok(grid.indexOf('href="/@Cyd"') < grid.indexOf('href="/@alma"'), 'live creators come first in the grid');
 assert.match(html, /src="https:\/\/openvibe\.network\/avatar\/alma\?s=40" width="40" height="40" alt="" loading="lazy"/, 'avatars from Network, sized');
 assert.match(html, /<dt>3 creators<\/dt><dd>offer a membership<\/dd>/);
 assert.match(html, /<dt>1 creator<\/dt><dd>live on OpenVibe\.Live now<\/dd>/);

@@ -44,7 +44,7 @@ function createAgentPages({ domain, config, layout, liveNow }) {
         const name = c.display_name || c.username;
         return {
             html: layout.page({
-                title: `${name} memberships`, active: 'creator', canonicalPath: `/${c.username}`, robots: 'index,follow',
+                title: `${name} memberships`, active: 'creator', canonicalPath: `/@${c.username}`, robots: 'index,follow',
                 description: c.bio || `Membership plans from ${name} on OpenVibe.`, viewer: null,
                 body: pages.creatorPage({
                     creator: creators.present(c), plans: list, viewer: null, member: null, rates: chargeRates,
@@ -58,7 +58,7 @@ function createAgentPages({ domain, config, layout, liveNow }) {
         const p = String(path || '/').replace(/\/+$/, '') || '/';
         if (p === '/') return home();
         if (p === '/updates') return updates();
-        const m = /^\/([^/]+)$/.exec(p);
+        const m = /^\/@([^/]+)$/.exec(p);
         if (!m) return null;
         return creator(decodeURIComponent(m[1]));
     }

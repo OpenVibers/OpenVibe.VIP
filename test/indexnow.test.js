@@ -53,8 +53,8 @@ const KEY = 'k'.repeat(32);
     test('publishing pings the creator page, the terms page and the sitemap', async () => {
         const res = await t.call('POST', `/api/v1/plans/${plan.id}/publish`, { user: creator });
         assert.strictEqual(res.status, 200, res.text);
-        assert.ok(pings.includes('http://vip.test/alice'), JSON.stringify(pings));
-        assert.ok(pings.includes(`http://vip.test/alice/plans/${plan.slug}`), JSON.stringify(pings));
+        assert.ok(pings.includes('http://vip.test/@alice'), JSON.stringify(pings));
+        assert.ok(pings.includes(`http://vip.test/@alice/plans/${plan.slug}`), JSON.stringify(pings));
         assert.ok(pings.includes('http://vip.test/sitemap.xml'), JSON.stringify(pings));
     });
 
@@ -64,15 +64,15 @@ const KEY = 'k'.repeat(32);
         assert.deepStrictEqual(pings, [], 'an unchanged edit is not a change');
         const res = await t.call('PATCH', `/api/v1/plans/${plan.id}`, { user: creator, body: { description: 'Now with more.' } });
         assert.strictEqual(res.status, 200, res.text);
-        assert.ok(pings.includes('http://vip.test/alice'), JSON.stringify(pings));
-        assert.ok(pings.includes(`http://vip.test/alice/plans/${plan.slug}`), JSON.stringify(pings));
+        assert.ok(pings.includes('http://vip.test/@alice'), JSON.stringify(pings));
+        assert.ok(pings.includes(`http://vip.test/@alice/plans/${plan.slug}`), JSON.stringify(pings));
     });
 
     test('archiving pings the creator page and the sitemap', async () => {
         pings.length = 0;
         const res = await t.call('POST', `/api/v1/plans/${plan.id}/archive`, { user: creator });
         assert.strictEqual(res.status, 200, res.text);
-        assert.ok(pings.includes('http://vip.test/alice'), JSON.stringify(pings));
+        assert.ok(pings.includes('http://vip.test/@alice'), JSON.stringify(pings));
         assert.ok(pings.includes('http://vip.test/sitemap.xml'), JSON.stringify(pings));
     });
 

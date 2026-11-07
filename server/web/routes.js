@@ -126,7 +126,7 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
         disallow: ['/me', '/dashboard', '/auth/', '/api/', '/embed/'],
     })));
     router.get('/sitemap.xml', async (req, res) => {
-        const urls = [{ loc: `${config.baseUrl}/`, lastmod: BOOT_AT }, ...(await creators.listPublic({ limit: 5000 })).map((c) => ({ loc: `${config.baseUrl}/${encodeURIComponent(c.username)}`, lastmod: BOOT_AT }))];
+        const urls = [{ loc: `${config.baseUrl}/`, lastmod: BOOT_AT }, ...(await creators.listPublic({ limit: 5000 })).map((c) => ({ loc: `${config.baseUrl}/@${encodeURIComponent(c.username)}`, lastmod: BOOT_AT }))];
         res.type('application/xml').send(seo.sitemapXml(urls));
     });
     // /llms.txt (llmstxt.org): a plain-markdown map of the site for language-model crawlers.
@@ -174,14 +174,14 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
                 const v = p.current_version;
                 about.push(`Plan ${v.name} (version ${v.version})${v.description ? `: ${v.description}` : ''}`);
             }
-            creatorPages.push({ title: `${name} memberships`, url: `/${c.username}`, text: about.join('\n\n') });
+            creatorPages.push({ title: `${name} memberships`, url: `/@${c.username}`, text: about.join('\n\n') });
             for (const p of planRows) {
                 const body = [`The published terms of ${name}'s ${p.current_version.name} plan on OpenVibe.VIP. Each edit is a new version; a member keeps the version they joined under.`];
                 for (const v of (p.versions || []).filter((x) => x.published_at)) {
                     const terms = termsText(v);
                     body.push(`Version ${v.version}${v.published_at ? ` (published ${String(v.published_at).slice(0, 10)})` : ''}${terms ? `\n${terms}` : ''}`);
                 }
-                planPages.push({ title: `${name}: ${p.current_version.name} terms`, url: `/${c.username}/plans/${p.slug}`, text: body.join('\n\n') });
+                planPages.push({ title: `${name}: ${p.current_version.name} terms`, url: `/@${c.username}/plans/${p.slug}`, text: body.join('\n\n') });
             }
         }
         return seo.llmsFull({
@@ -420,12 +420,12 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
     }, { backTo: '/dashboard' });
 
     // ── Creator pages ────────────────────────────────────────
-    router.get('/:username', async (req, res, next) => {
+    router.get('/@:username', async (req, res, next) => {
         try {
             if (RESERVED.has(req.params.username.toLowerCase())) return notFound(req, res);
             const c = await creators.byUsername(req.params.username);
             if (!c || c.status !== 'active') return notFound(req, res);
-            if (c.username !== req.params.username) return res.redirect(301, `/${encodeURIComponent(c.username)}`);
+            if (c.username !== req.params.username) return res.redirect(301, `/@${encodeURIComponent(c.username)}`);
             const list = await prices.withPrices(c.subject, (await Promise.all((await plans.list({ creatorId: c.id })).map(async (p) => await plans.present(p)))));
             const isOwner = !!(req.viewer && req.viewer.subject === c.subject);
             const member = req.viewer && !isOwner ? await entitlements.check(req.viewer.subject, c.subject, { mode: 'auto' }) : null;
@@ -449,29 +449,51 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
                     id: row.id, title: row.title, tiers, published_at: row.published_at,
                     image: row.image_id ? { id: row.image_id, url: row.image_url } : null,
                     unlocked: !!access.unlocked, body_html: access.unlocked ? row.body_html : null,
-                    join_url: target ? `/${encodeURIComponent(c.username)}#plan-${encodeURIComponent(target.slug)}` : null,
+                    join_url: target ? `/@${encodeURIComponent(c.username)}#plan-${encodeURIComponent(target.slug)}` : null,
                 });
             }
             send(res, 200, {
-                title: `${name} memberships`, active: 'creator', canonicalPath: `/${c.username}`, viewer: req.viewer,
+                title: `${name} memberships`, active: 'creator', canonicalPath: `/@${c.username}`, viewer: req.viewer,
                 description: c.bio || `Membership plans from ${name} on OpenVibe.`,
                 robots: list.length ? 'index,follow' : 'noindex,follow',
                 body: pages.creatorPage({ creator: creators.present(c), plans: list, viewer: req.viewer, member, rates: list.some((p) => p.purchasable) ? await rates() : null, providers: config.billing.providers, token: req.viewer ? forms.token(req.viewer.subject) : '', query: req.query, isOwner, posts }),
             });
         } catch (e) { next(e); }
     });
-    router.get('/:username/plans/:slug', async (req, res) => {
+    router.get('/@:username/plans/:slug', async (req, res) => {
         const c = await creators.byUsername(req.params.username);
         if (!c || c.status !== 'active') return notFound(req, res);
         const plan = (await plans.list({ creatorId: c.id, includeArchived: true })).find((p) => p.slug === req.params.slug);
         if (!plan) return notFound(req, res);
         const versions = (await Promise.all((await plans.versions(plan.id)).filter((v) => v.published_at).map(plans.presentVersion)));
         return send(res, 200, {
-            title: `Terms history · ${c.display_name || c.username}`, canonicalPath: `/${c.username}/plans/${plan.slug}`, viewer: req.viewer, robots: 'noindex,follow',
+            title: `Terms history · ${c.display_name || c.username}`, canonicalPath: `/@${c.username}/plans/${plan.slug}`, viewer: req.viewer, robots: 'noindex,follow',
             body: pages.planHistory({ creator: creators.present(c), plan, versions }),
         });
     });
-    post('/:username/join', async (req, res, to) => {
+    // The canonical creator address is /@<username>. The root /<username> form is kept only as a 301 from old
+    // links (query kept); a name that is not an active creator still 404s.
+    const legacyCreator = (suffix) => async (req, res, next) => {
+        try {
+            if (RESERVED.has(String(req.params.username).toLowerCase())) return notFound(req, res);
+            const c = await creators.byUsername(req.params.username);
+            if (!c || c.status !== 'active') return notFound(req, res);
+            const q = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+            return res.redirect(301, `/@${encodeURIComponent(c.username)}${suffix}${q}`);
+        } catch (e) { next(e); }
+    };
+    router.get('/:username', legacyCreator(''));
+    router.get('/:username/plans/:slug', async (req, res, next) => {
+        try {
+            if (RESERVED.has(String(req.params.username).toLowerCase())) return notFound(req, res);
+            const c = await creators.byUsername(req.params.username);
+            if (!c || c.status !== 'active') return notFound(req, res);
+            const q = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+            return res.redirect(301, `/@${encodeURIComponent(c.username)}/plans/${encodeURIComponent(req.params.slug)}${q}`);
+        } catch (e) { next(e); }
+    });
+
+    post('/@:username/join', async (req, res, to) => {
         const c = await creators.byUsername(req.params.username);
         if (!c) throw new VipError(404, 'vip.creator_not_found', 'no such creator');
         const plan = await plans.byId(String(req.body.plan_id || ''));
@@ -483,7 +505,17 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
         if (out.membership_started) return back(res, '/me', 'ok', `Welcome — you are now a member of ${c.display_name || c.username}.`);
         if (out.checkout_url && !out.checkout_ref) return res.redirect(303, out.checkout_url);
         return send(res, 200, { title: 'Finish joining', robots: 'noindex,nofollow', viewer: req.viewer, body: pages.checkoutPage({ creator: creators.present(c), out }) });
-    }, { backTo: (req) => `/${req.params.username}` });
+    }, { backTo: (req) => `/@${req.params.username}` });
+
+    // An old in-flight join form: 308 keeps the method and body while moving it to the canonical address.
+    router.post('/:username/join', async (req, res, next) => {
+        if (String(req.params.username).startsWith('@')) return next();   // the canonical /@:username/join route above
+        try {
+            const c = await creators.byUsername(req.params.username);
+            if (!c || c.status !== 'active') return notFound(req, res);
+            return res.redirect(308, `/@${encodeURIComponent(c.username)}/join`);
+        } catch (e) { next(e); }
+    });
 
     return router;
 }
