@@ -104,7 +104,7 @@ function home({ creators, live = [], networkUrl = 'https://openvibe.network' }) 
     const body = showcase.hero({
         eyebrow: 'OpenVibe.VIP',
         title: 'Memberships across', accent: 'OpenVibe',
-        lede: "Back the creators you watch with a monthly membership. Join once and it's recognised across OpenVibe: a badge by your name in chat, members-only posts, a members' room, whatever the plan lists.",
+        lede: "Back the creators you watch with a monthly membership, recognised across OpenVibe: a badge in chat, members-only posts and a members' room.",
         actions: creators.length
             // Two, so they sit side by side on a phone; your memberships are in the app bar.
             ? [{ label: 'Find a creator', href: '#creators', primary: true }, { label: 'Offer a plan', href: '#for-creators' }]
