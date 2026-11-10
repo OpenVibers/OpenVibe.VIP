@@ -91,6 +91,8 @@ function createLayout({ config, release }) {
                 `<link rel="stylesheet" href="${asset('css/vip.css')}">`,
                 // openvibe-shared stylesheets a page asks for by name (the home's showcase.css).
                 ...(o.styles || []).map((name) => `<link rel="stylesheet" href="${ovServe.url(name)}">`),
+                ...(o.scripts || []).map((name) => `<script src="${ovServe.url(name)}" defer></script>`),
+                ...(o.pageScripts || []).map((name) => `<script src="${asset(name)}" defer></script>`),
                 `<meta name="ov-boost" content="vip@${esc(RELEASE)}">`,
                 `<script src="${ovServe.url('boost.js')}" data-main="#main" defer></script>`,
                 `<script src="${asset('js/vip.js')}" defer></script>`,
