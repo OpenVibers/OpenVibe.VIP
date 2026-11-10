@@ -168,7 +168,7 @@ const { test, run } = harness('api');
         assert.match(p.text, /Sign in to join/);
         assert.match(p.text, /<link rel="canonical" href="http:\/\/vip\.test\/@lena">/);
         assert.match(p.text, /\/shared\/navbar\.js\?v=[0-9a-f]{12}/);
-        assert.match(p.text, /<noscript>/);
+        assert.match(p.text, /<div id="navbar-mount"><nav class="openvibe-navbar"[^>]*data-ov-server-nav="true"/);
         assert.match(p.text, /<meta name="ov-boost" content="vip@[^"]+">/);
         assert.match(p.text, /\/shared\/boost\.js\?v=[0-9a-f]{12}" data-main="#main" defer>/);
         assert.match(p.text, /"loginUrl":"\/auth\/login\?next=\{path\}"/);
