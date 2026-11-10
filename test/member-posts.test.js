@@ -203,6 +203,8 @@ test('an image on a post goes to Media and is shown to the members of the tier',
         const member = t.network.newUser('mika');
         await publishTiers(t, creator, [1]);
         const dash = await t.page('/dashboard', { user: creator });
+        assert.ok(dash.text.includes('data-post-upload') && dash.text.includes('/shared/ov-upload.js') && dash.text.includes('/shared/ov-upload.css'), 'the composer loads the shared upload kit');
+        assert.ok(!dash.text.includes('type="file" name="image"'), 'the hand-rolled file input is gone');
         const token = t.csrf(dash.text);
         const png = Buffer.from('89504e470d0a1a0a', 'hex');
         const res = await t.pageMultipart('/dashboard/posts', {

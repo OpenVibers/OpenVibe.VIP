@@ -199,11 +199,15 @@ function postsSection(posts) {
  */
 function postsAdmin({ posts, tiers, moderation, token, base }) {
     const composer = tiers.length ? `<details class="card"><summary>New post</summary>
-<form method="post" action="${base}/posts" enctype="multipart/form-data">${csrf(token)}
+<form method="post" action="${base}/posts" data-post-upload-form>${csrf(token)}
 <label>Title <input name="title" maxlength="140" required></label>
 <label>Text (Markdown) <textarea name="body" rows="6" required></textarea></label>
 <fieldset><legend>Who reads it</legend>${tiers.map((t) => `<label class="check"><input type="checkbox" name="tiers" value="${t}"> Tier ${t}</label>`).join('')}</fieldset>
-<label>Image (optional) <input type="file" name="image" accept="image/png,image/jpeg,image/webp,image/gif"></label>
+<div class="field"><span>Image (optional)</span>
+<div data-post-upload data-accept="image/png,image/jpeg,image/webp,image/gif"></div>
+<p class="muted small" data-post-upload-status role="status" aria-live="polite"></p>
+<div data-post-upload-progress hidden></div>
+</div>
 <p class="muted small">A member of a higher tier reads posts written for a lower tier too. The text is only ever sent to members.</p>
 <button type="submit">Publish post</button></form></details>`
         : '<p class="muted">Publish a plan first: a post is written for the members of one of your tiers.</p>';

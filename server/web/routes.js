@@ -286,6 +286,7 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
             })) : [];
             send(res, 200, {
                 title: isNetwork ? 'Network plans' : 'Dashboard', active: 'dashboard', robots: 'noindex,nofollow', canonicalPath: '/dashboard', viewer: req.viewer,
+                styles: ['ov-upload.css'], scripts: ['ov-upload.js'], pageScripts: ['js/post-upload.js'],
                 body: pages.dashboard({
                     viewer: req.viewer, creator, isNetwork, isStaff: isStaff(req.viewer), plans: planRows, allPerks, ownPerks, members, membersSource, priceTable,
                     rules: isNetwork ? [] : await Promise.all((await policies.list(creator.id)).map(policies.present)), token: forms.token(req.viewer.subject), query: req.query, base: isNetwork ? '/dashboard/network' : '/dashboard',
