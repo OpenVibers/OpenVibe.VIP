@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use OpenVibe.VIP in research or a product, cite it as below."
+title: openvibe-vip
+type: software
+authors:
+  - name: OpenVibe
+    alias: OpenVibers
+    website: https://openvibe.network
+repository-code: https://github.com/OpenVibers/OpenVibe.VIP
+url: https://openvibe.vip
+license: AGPL-3.0-only
+abstract: "Memberships with plans and perks recognised across every OpenVibe site, at openvibe.vip."
+keywords:
+  - openvibe
+  - creators
+  - entitlements
+  - memberships
+  - subscriptions

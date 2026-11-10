@@ -2,6 +2,9 @@
 
 > Memberships: plans, perks and benefits recognised across every OpenVibe site.
 
+**Live site:** https://openvibe.vip · **API docs:** https://openvibe.services · **For AI:** https://openvibe.vip/llms.txt
+**Run it:** `npm ci && npm run dev` (Node 22 or newer) · **Tests:** `npm test`
+
 **Status:** alpha — **launched 2026-10-17** at [openvibe.vip](https://openvibe.vip) (openvibe-contracts 0.200.0),
 right after the Billing cutover made OpenVibe.Billing the money ledger. Checkout is open (PowerChat and Vibes credit);
 the 43 plans imported from Live are on sale, with no memberships sold yet. It runs on the host since 2026-09-23.  
