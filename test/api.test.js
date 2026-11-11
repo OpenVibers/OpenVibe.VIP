@@ -172,7 +172,7 @@ const { test, run } = harness('api');
         assert.match(p.text, /<meta name="ov-boost" content="vip@[^"]+">/);
         assert.match(p.text, /\/shared\/boost\.js\?v=[0-9a-f]{12}" data-main="#main" defer>/);
         assert.match(p.text, /"loginUrl":"\/auth\/login\?next=\{path\}"/);
-        assert.doesNotMatch(p.text, /\bfree\b|\$0|no ads/i);
+        assert.doesNotMatch(p.text, /\bfree\b(?!\s+tools)|\$0|no ads/i, 'no pricing claims (the shared footer\'s "Free tools" group is a place, not a price)');
         const hist = await t.page(`/@lena/plans/${plan.slug}`);
         assert.strictEqual(hist.status, 200);
         assert.match(hist.text, /v1/);
