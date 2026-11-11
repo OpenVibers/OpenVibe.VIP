@@ -11,6 +11,7 @@ const { createDomain } = require('../server/domain');
 const { createPosts } = require('../server/domain/posts');
 const { createMediaClient } = require('../server/media-client');
 const { createWebRoutes } = require('../server/web/routes');
+const glyphs = require('openvibe-shared/glyphs');
 
 const { test, run } = harness('members-only posts');
 
@@ -317,7 +318,11 @@ test('a locked post offers a way to join only when a tier that reads it can be j
         assert.ok(!out.text.includes('For the first row.'), 'no text of a locked post, either way');
         assert.ok(!out.text.includes('For the second row.'));
         // The lock glyph before the line, drawn by the shared glyph set and hidden from a screen reader.
-        assert.ok(/aria-hidden="true"><rect x="5" y="11"/.test(out.text), 'the shared lock glyph is on the line');
+        // Ask the pinned library for the drawing rather than pinning one of its older paths.
+        const lock = glyphs.svg('lock', { size: 16 });
+        assert.ok(lock, 'the shared glyph set draws a lock');
+        assert.match(lock, /aria-hidden="true"/, 'the glyph is hidden from a screen reader');
+        assert.ok(out.text.includes(lock), 'the shared lock glyph is on the line');
     } finally { await t.close(); }
 });
 
