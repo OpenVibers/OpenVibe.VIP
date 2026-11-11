@@ -8,6 +8,7 @@
  * no begging copy.
  */
 const showcase = require('openvibe-shared/showcase');
+const kit = require('openvibe-shared/kit');
 const glyphs = require('openvibe-shared/glyphs');
 const { esc } = require('../util');
 
@@ -99,7 +100,7 @@ function home({ creators, live = [], networkUrl = 'https://openvibe.network' }) 
 
     const list = ordered.length
         ? `<ul class="creator-list">${ordered.map((c) => `<li><a href="/@${encodeURIComponent(c.username)}">${avatar(networkUrl, c.username, 40)}<span class="vip-creator-text"><b>${esc(c.display_name || c.username)}</b><span class="muted">@${esc(c.username)}</span></span>${onAir.has(c.username.toLowerCase()) ? '<span class="vip-live-pill">Live</span>' : ''}</a></li>`).join('')}</ul>`
-        : '<p class="muted">No creator has published a plan here yet.</p>';
+        : kit.empty({ icon: 'members', title: 'No creator has published a plan here yet', text: 'A membership is a creator\'s monthly plan: a badge in chat, members-only posts and a members\' room. Be the first to offer one.', action: { href: '#for-creators', label: 'Offer a plan', icon: 'plus' } });
 
     const body = showcase.hero({
         eyebrow: 'OpenVibe.VIP',
@@ -216,7 +217,7 @@ function postsAdmin({ posts, tiers, moderation, token, base }) {
 ${p.image && p.image.url ? `<p><img src="${esc(p.image.url)}" alt="" style="max-width:100%;height:auto"></p>` : ''}
 <div class="post-body">${p.body_html}</div>
 <form method="post" action="${base}/posts/${esc(p.id)}/${p.status === 'hidden' ? 'unhide' : 'hide'}" class="inline">${csrf(token)}<button type="submit" class="button-quiet">${p.status === 'hidden' ? 'Show again' : 'Hide'}</button></form>
-</article>`).join('') : '<p class="muted">No posts yet.</p>';
+</article>`).join('') : kit.empty({ icon: 'file', title: 'No posts yet', text: 'Write a members-only post below and it appears here.' });
     const mod = moderation && moderation.length ? `<section><h2>Moderation</h2>
 <ul class="rules">${moderation.map((m) => `<li><b>${esc(m.title)}</b> · ${esc(m.creator)} · ${esc(m.tiers.map((t) => `Tier ${t}`).join(', '))} · <span class="pill">${esc(m.status)}</span>
 <form method="post" action="/dashboard/moderation/posts/${esc(m.id)}/hide" class="inline">${csrf(token)}<button type="submit" class="button-quiet">Hide</button></form>
@@ -258,7 +259,7 @@ ${p.purchasable ? priceLine(rates, p.price_cents) : ''}
 ${join}
 <p class="muted small">Version ${esc(v.version)} · published ${fmtDate(v.published_at)} · <a href="/@${encodeURIComponent(creator.username)}/plans/${encodeURIComponent(p.slug)}">terms history</a></p>
 </article>`;
-    }).join('') : '<p class="muted">No plan is published yet.</p>';
+    }).join('') : kit.empty({ icon: 'members', title: 'No plan is published yet', text: 'This creator has not published a membership yet.', action: { href: '/', label: 'Find another creator', icon: 'search' } });
     return `<section class="creator-head"><p class="eyebrow">Membership</p><h1>${esc(name)}</h1><p class="muted">@${esc(creator.username)}</p>
 ${creator.bio ? `<p>${esc(creator.bio)}</p>` : ''}</section>
 ${notice(query)}
@@ -314,7 +315,7 @@ ${ref && !out.checkout_url ? `<p>Complete the payment on PowerChat with this ref
 
 // ── Dashboard ────────────────────────────────────────────────
 function perkChoices(allPerks, selectedKeys) {
-    if (!allPerks.length) return '<p class="muted small">No perks yet — define one below.</p>';
+    if (!allPerks.length) return kit.empty({ icon: 'gift', title: 'No perks yet', text: 'Define a perk below and it can be included in a plan.' });
     return `<fieldset class="perk-choices"><legend>Perks</legend>${allPerks.map((p) => `<label class="check"><input type="checkbox" name="perks" value="${esc(p.key)}"${selectedKeys.includes(p.key) ? ' checked' : ''}> ${esc(p.name)}${p.scope === 'network' ? ' <span class="muted small">(network)</span>' : ''}</label>`).join('')}</fieldset>`;
 }
 
@@ -373,7 +374,7 @@ ${isNetwork ? '' : `<section class="card"><h2>Profile</h2><form method="post" ac
 <label class="check"><input type="checkbox" name="show_member_count" value="1"${creator.show_member_count ? ' checked' : ''}> Show how many members you have on your card and widget</label>
 <button type="submit">Save</button></form></section>
 ${shareCard({ creator, embeds, hasPlan: plans.some((p) => p.status === 'published') })}`}
-<section><h2>Plans</h2>${plans.length ? plans.map((p) => planEditor({ plan: p, allPerks, token, base, priceTable })).join('') : '<p class="muted">No plans yet.</p>'}
+<section><h2>Plans</h2>${plans.length ? plans.map((p) => planEditor({ plan: p, allPerks, token, base, priceTable })).join('') : kit.empty({ icon: 'members', title: 'No plans yet', text: 'Make the first tier below: a name, what it includes and a monthly price.' })}
 <details class="card"><summary>New plan</summary><form method="post" action="${base}/plans">${csrf(token)}
 <label>Name <input name="name" maxlength="80" required></label>
 <label>Description <textarea name="description" maxlength="2000" rows="3"></textarea></label>
@@ -392,7 +393,7 @@ ${ownPerks.length ? `<ul class="perk-admin">${ownPerks.map((p) => `<li><details>
 <label>Product bindings, one "product binding" per line <textarea name="bindings" rows="2">${esc(p.bindings.map((b) => `${b.product} ${b.binding}`).join('\n'))}</textarea></label>
 <label>Status <select name="status"><option value="active"${p.status === 'active' ? ' selected' : ''}>active</option><option value="retired"${p.status === 'retired' ? ' selected' : ''}>retired</option></select></label>
 <p class="muted small">Renaming a perk does not change the terms of published versions.</p>
-<button type="submit">Save perk</button></form></details></li>`).join('')}</ul>` : '<p class="muted">No perks of your own yet.</p>'}
+<button type="submit">Save perk</button></form></details></li>`).join('')}</ul>` : kit.empty({ icon: 'gift', title: 'No perks of your own yet', text: 'Add one below and include it in a plan.' })}
 <details class="card"><summary>New perk</summary><form method="post" action="${base}/perks">${csrf(token)}
 <label>Name <input name="name" maxlength="80" required></label>
 <label>Key (a-z, 0-9, -) <input name="key" maxlength="48" pattern="[a-z0-9][a-z0-9-]*"></label>
@@ -401,7 +402,7 @@ ${ownPerks.length ? `<ul class="perk-admin">${ownPerks.map((p) => `<li><details>
 <label>Product bindings, one "product binding" per line (e.g. <code>chat badge</code>) <textarea name="bindings" rows="2"></textarea></label>
 <button type="submit">Create perk</button></form></details></section>
 ${isNetwork ? '' : `${postsAdmin({ posts, tiers: postTiers, moderation, token, base })}<section><h2>Members</h2>
-${members.length ? `<table class="members"><thead><tr><th>Member</th><th>Plan version</th><th>Paid through</th></tr></thead><tbody>${members.map((m) => `<tr><td><code>${esc(m.member.id)}</code></td><td>${m.membership && m.membership.plan_version ? `${esc(m.membership.plan_version.name)} v${esc(m.membership.plan_version.version)}` : '—'}</td><td>${fmtDate(m.current_period_end)}${m.cancel_at_period_end ? ' (ends)' : ''}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No active members.</p>'}
+${members.length ? `<table class="members"><thead><tr><th>Member</th><th>Plan version</th><th>Paid through</th></tr></thead><tbody>${members.map((m) => `<tr><td><code>${esc(m.member.id)}</code></td><td>${m.membership && m.membership.plan_version ? `${esc(m.membership.plan_version.name)} v${esc(m.membership.plan_version.version)}` : '—'}</td><td>${fmtDate(m.current_period_end)}${m.cancel_at_period_end ? ' (ends)' : ''}</td></tr>`).join('')}</tbody></table>` : kit.empty({ icon: 'members', title: 'No active members yet', text: 'When someone joins one of your plans their membership appears here.' })}
 <p class="muted small">${membersSource === 'billing' ? 'From OpenVibe.Billing.' : 'OpenVibe.Billing did not answer; this is VIP\'s recent projection and may be incomplete.'}</p></section>
 <section><h2>Members-only resources</h2>
 <p class="muted small">A product (Blog, Wiki, Community, Chat, Live) asks VIP whether a viewer may see a resource you gate here; anything VIP cannot confirm is refused.</p>

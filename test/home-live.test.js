@@ -30,6 +30,11 @@ assert.match(html, /src="https:\/\/openvibe\.network\/avatar\/alma\?s=40" width=
 assert.match(html, /<dt>3 creators<\/dt><dd>offer a membership<\/dd>/);
 assert.match(html, /<dt>1 creator<\/dt><dd>live on OpenVibe\.Live now<\/dd>/);
 
+const emptyHome = pages.home({ creators: [], live: [], networkUrl: 'https://openvibe.network' });
+assert.match(emptyHome, /class="ovk-empty"/, 'an empty home is a kit empty state');
+assert.match(emptyHome, /No creator has published a plan here yet/);
+assert.match(emptyHome, /ovk-btn[^>]*href="#for-creators"/, 'the next action is a kit button');
+
 const quiet = pages.home({ creators, live: [] });
 assert.ok(!quiet.includes('id="live"'), 'no strip when nobody with a plan is live');
 assert.ok(!/live on OpenVibe\.Live now/.test(quiet), 'and no live count');
