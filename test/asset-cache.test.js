@@ -28,10 +28,10 @@ const { test, run } = harness('asset-cache');
     test('a static asset with a wrong or missing ?v= gets the short public window', async () => {
         const wrong = await get('/css/vip.css?v=deadbeefdeadbeef');
         assert.strictEqual(wrong.status, 200, wrong.text);
-        assert.strictEqual(wrong.headers.get('cache-control'), 'public, max-age=300, stale-while-revalidate=86400');
+        assert.strictEqual(wrong.headers.get('cache-control'), 'public, max-age=300, stale-while-revalidate=300');
         const none = await get('/css/vip.css');
         assert.strictEqual(none.status, 200, none.text);
-        assert.strictEqual(none.headers.get('cache-control'), 'public, max-age=300, stale-while-revalidate=86400');
+        assert.strictEqual(none.headers.get('cache-control'), 'public, max-age=300, stale-while-revalidate=300');
     });
 
     test('an HTML widget takes the HTML policy', async () => {
