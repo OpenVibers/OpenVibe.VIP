@@ -89,7 +89,7 @@ function createPeriods({ db, now, log = console }) {
         stats.runs++;
         stats.offenders = offenders.length;
         stats.offenders_total += offenders.length;
-        if (offenders.length) log.warn(`[VIP] period audit: ${offenders.length} active membership(s) without a paid period record; doubted: ${offenders.slice(0, 5).map((o) => `${o.member}→${o.creator} ${o.problem}`).join(', ')}`);
+        if (offenders.length) log.warn(`[VIP] period audit: ${offenders.length} active membership(s) without a paid period record; doubted: ${offenders.slice(0, 5).map((o) => `${o.member} to ${o.creator} ${o.problem}`).join(', ')}`);
         return { checked: rows.length, offenders };
     }
 

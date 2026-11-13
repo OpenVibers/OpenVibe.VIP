@@ -184,7 +184,7 @@ function createEntitlements({ db, now, config, billing, outbox, memberships, pla
             row = await authoritative(member, creator, { traceparent, assertion });
             return await answer(row, 'billing', { membership: await membershipOf(member, creator) });
         } catch (err) {
-            log.warn(`[VIP] authoritative entitlement check failed (${member} → ${creator}): ${err.message}`);
+            log.warn(`[VIP] authoritative entitlement check failed (${member} to ${creator}): ${err.message}`);
             if (mode === 'auto' && withinGrace) return { ...await answer(row, 'projection', { stale: true, membership: await membershipOf(member, creator) }), reason: 'billing_unavailable' };
             return unknown(member, creator, 'billing_unavailable');
         }
