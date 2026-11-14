@@ -81,7 +81,7 @@ async function boot(opts = {}) {
         let bodyStr;
         if (form) { headers['Content-Type'] = 'application/x-www-form-urlencoded'; bodyStr = new URLSearchParams(form).toString(); }
         const res = await fetch(base + p, { method, headers, body: bodyStr, redirect: 'manual' });
-        return { status: res.status, location: res.headers.get('location'), text: await res.text() };
+        return { status: res.status, location: res.headers.get('location'), cacheControl: res.headers.get('cache-control'), text: await res.text() };
     }
     /**
      * An SSR request with a multipart form (fields and at most one file), the way the post composer
