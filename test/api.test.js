@@ -179,6 +179,7 @@ const { test, run } = harness('api');
         assert.match(hist.text, /v2/);
         assert.strictEqual((await t.page('/LENA')).location, '/@lena');
         assert.deepStrictEqual([(await t.page('/lena?from=old')).status, (await t.page('/lena?from=old')).location], [301, '/@lena?from=old']);
+        assert.strictEqual((await t.page('/lena?from=old')).cacheControl, 'public, max-age=86400', 'a name\'s 301 lives a day in a browser, not for good (11-14)');
         assert.strictEqual((await t.page('/nobody-here')).status, 404);
         const sm = await t.page('/sitemap.xml');
         assert.match(sm.text, /http:\/\/vip\.test\/@lena/);

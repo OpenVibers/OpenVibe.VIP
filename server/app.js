@@ -175,6 +175,7 @@ async function createApp(opts = {}) {
         try { c = await domain.creators.byUsername(m[1]); } catch { return next(); }
         if (!c || c.status !== 'active') return next();
         const q = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+        res.set('Cache-Control', 'public, max-age=86400');   // a name's 301 lives a day in a browser, not for good (11-14)
         return res.redirect(301, `/@${encodeURIComponent(c.username)}${m[2] || ''}${m[3] || ''}${q}`);
     });
     // The agent layer (openvibe-shared/agent-layer): /.well-known/agent.json and the Markdown twins of the

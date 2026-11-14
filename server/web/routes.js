@@ -426,7 +426,7 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
             if (RESERVED.has(req.params.username.toLowerCase())) return notFound(req, res);
             const c = await creators.byUsername(req.params.username);
             if (!c || c.status !== 'active') return notFound(req, res);
-            if (c.username !== req.params.username) return res.redirect(301, `/@${encodeURIComponent(c.username)}`);
+            if (c.username !== req.params.username) return res.set('Cache-Control', 'public, max-age=86400').redirect(301, `/@${encodeURIComponent(c.username)}`);
             const list = await prices.withPrices(c.subject, (await Promise.all((await plans.list({ creatorId: c.id })).map(async (p) => await plans.present(p)))));
             const isOwner = !!(req.viewer && req.viewer.subject === c.subject);
             const member = req.viewer && !isOwner ? await entitlements.check(req.viewer.subject, c.subject, { mode: 'auto' }) : null;
@@ -480,6 +480,7 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
             const c = await creators.byUsername(req.params.username);
             if (!c || c.status !== 'active') return notFound(req, res);
             const q = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+            res.set('Cache-Control', 'public, max-age=86400');   // a name's 301 lives a day in a browser, not for good (11-14)
             return res.redirect(301, `/@${encodeURIComponent(c.username)}${suffix}${q}`);
         } catch (e) { next(e); }
     };
@@ -490,6 +491,7 @@ function createWebRoutes({ domain, config, layout, userAuth, liveNow }) {
             const c = await creators.byUsername(req.params.username);
             if (!c || c.status !== 'active') return notFound(req, res);
             const q = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+            res.set('Cache-Control', 'public, max-age=86400');   // a name's 301 lives a day in a browser, not for good (11-14)
             return res.redirect(301, `/@${encodeURIComponent(c.username)}/plans/${encodeURIComponent(req.params.slug)}${q}`);
         } catch (e) { next(e); }
     });
